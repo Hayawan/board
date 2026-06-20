@@ -1,0 +1,13 @@
+node_modules/
+.repomix/
+screenshots/
+.claude/settings.local.json
+.claude/tdd-guard/
+.serena/
+.DS_Store
+.idea/
+
+# Personal capture data — kept on disk for local dev, excluded from the repo.
+# (Self-hostable version will seed/auto-create these on first run.)
+bookmarks.json
+library.json

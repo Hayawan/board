@@ -1,0 +1,4 @@
+[
+  { "id": "inspiration", "name": "Inspiration", "type": "inspiration", "view": "grid", "dataFile": "bookmarks.json" },
+  { "id": "library",     "name": "Library",     "type": "library",     "view": "list", "dataFile": "library.json" }
+]

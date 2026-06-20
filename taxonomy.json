@@ -1,0 +1,5 @@
+{
+  "audience": ["b2b", "enterprise", "consumer", "developer", "prosumer"],
+  "form": ["saas", "mobile-app", "hardware", "e-commerce", "portfolio", "editorial", "agency", "infrastructure"],
+  "domain": ["ai", "productivity", "dev-tools", "health", "fintech", "creative", "commerce", "crypto", "legal", "recruitment"]
+}
