@@ -41,7 +41,7 @@ UJ-1 optimistic save · UJ-2 degraded/disabled-LLM dignified state · UJ-3 zero-
 | FR-10 | 7.3 | FR-11 | 10.1 | FR-12 | 10.2 |
 | FR-13 | 8.1 | FR-14 | 8.2 | FR-15 | 8.3 |
 | FR-16 | 9.1 | FR-17 | 5.2 | FR-18 | 5.3, 8.4 |
-| FR-19 | 3.1, 3.2 | FR-20 | 1.5, 3.3 | FR-21 | 2.1, 2.2 |
+| FR-19 | 3.1, 3.2, 3.4, 10.3 | FR-20 | 1.5, 3.3 | FR-21 | 2.1, 2.2 |
 | FR-22 | 2.4 | FR-23 | 11.1, 11.2 | NFR-1/C1 | 5.1, 6.5 |
 | NFR-2 | 1.1, 1.3, 1.4 | UJ-2 | 8.5 | UJ-3 | 8.6 |
 
@@ -188,6 +188,16 @@ So that import is a first-class, invokable capability. *(FR-20 part 2.)*
 **Acceptance Criteria:**
 **Given** a bookmarks payload, **When** the `import-bookmarks` skill runs, **Then** items are created under the target board with `status=pending`.
 **And** a unit test runs the skill with a mock ctx and asserts created items + dedupe.
+
+### Story 3.4: Core capabilities registered as skills (add-item, create-board, tag)
+As the board-oss maintainer,
+I want the remaining core capabilities to be registered Skills with zod contracts,
+So that the "every capability is a skill" principle (AD11) holds uniformly and the UI drives them through the one generic route. *(FR-19; behaviors detailed in their home epics.)*
+
+**Acceptance Criteria:**
+**Given** the registry, **When** the app boots, **Then** `add-item`, `create-board`, and `tag` are registered Skills with zod `inputSchema`/`outputSchema` (their full behavior is specified in Epics 6/7 (add-item), 1/10 (create-board), and below (tag)).
+**Given** the `tag` skill with an item + tags, **When** invoked, **Then** the item's `tags` field is updated and `search_blob` refreshed.
+**And** unit tests assert each skill is registered and invokable via `POST /skills/:name`, and the `tag` skill's effect.
 
 ---
 
@@ -430,6 +440,16 @@ So that a bad LLM proposal can't create an insane board. *(FR-12, C7, C11.)*
 **Acceptance Criteria:**
 **Given** an emitted descriptor, **When** validated, **Then** field types must be in the closed set, field count ≤ N, no duplicate/reserved keys; on failure one repair re-ask runs, else it surfaces as an editable draft.
 **And** adversarial tests (off-list types, 500 fields, reserved keys, malformed JSON) assert the guardrails reject/repair and never write on failure.
+
+### Story 10.3: generate-fields skill (LLM-assisted field suggestion on an existing board)
+As a user refining a board,
+I want to ask the agent to suggest/add custom fields to an existing board,
+So that I can evolve a board's schema without designing it by hand. *(FR-19; the founder's "ask the agent to generate custom fields"; a lighter cousin of the composer, placed here because it reuses the LLM provider (Epic 4) and the composer guardrails (Story 10.2).)*
+
+**Acceptance Criteria:**
+**Given** an existing board descriptor and a natural-language request, **When** the `generate-fields` skill runs, **Then** the LLM proposes additional typed fields (closed type set) I accept or reject; accepted fields are appended to the descriptor.
+**Given** a proposal with out-of-set types or reserved/duplicate keys, **Then** the Story 10.2 guardrails reject/repair it; nothing is written until accept.
+**And** a unit test (mock provider) asserts a valid proposal is produced, guardrails reject bad fields, and the descriptor changes only on accept.
 
 ---
 
