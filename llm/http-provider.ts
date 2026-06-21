@@ -70,8 +70,14 @@ export class HttpProvider implements LLMProvider {
       model: this.cfg.model,
       messages: [{ role: 'user', content: prompt }],
       response_format: {
+        // NOT strict: OpenAI strict mode requires EVERY property in `required`
+        // (optionals modeled as nullable), but a zod `.optional()` field rejects an
+        // explicit null on revalidation — so strict + optional fields → a 400.
+        // The schema still guides the model; `parseStructuredOutput` is the real
+        // guarantee, so non-strict is both safe and broadly compatible (incl. local
+        // models that ignore json_schema entirely).
         type: 'json_schema',
-        json_schema: { name: 'result', schema: zodToJsonSchema(schema), strict: true },
+        json_schema: { name: 'result', schema: zodToJsonSchema(schema), strict: false },
       },
     });
 

@@ -41,6 +41,21 @@ describe('HttpProvider (Story 4.2)', () => {
     assert.ok(js?.properties?.title && js?.properties?.n, 'schema must be embedded in the request');
   });
 
+  // Regression: a schema with an OPTIONAL field must not use strict mode (strict +
+  // optionals → 400 from real OpenAI) and must still parse when the field is absent.
+  it('handles schemas with optional fields without strict mode', async () => {
+    let body: { response_format?: { json_schema?: { strict?: boolean } } } | undefined;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(init.body as string);
+      return okResponse('{"title":"x"}'); // optional `n` omitted
+    }) as unknown as typeof fetch;
+    const optSchema = z.object({ title: z.string(), n: z.number().optional() });
+    const provider = new HttpProvider({ baseUrl: 'http://x/v1', apiKey: 'k', model: 'm', fetchImpl });
+    const out = await provider.complete('p', optSchema);
+    assert.deepEqual(out, { title: 'x' });
+    assert.equal(body?.response_format?.json_schema?.strict, false, 'strict must be false');
+  });
+
   // AC 2 — open model is the same class with a different base-URL (no key needed)
   it('works against a keyless local base-URL (no Authorization header)', async () => {
     let headers: Record<string, string> = {};
