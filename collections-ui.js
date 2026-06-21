@@ -60,6 +60,38 @@ export function itemFieldEntries(item, descriptor) {
   return out;
 }
 
+// Story 8.2: filters are DESCRIPTOR-DRIVEN — derived from the board's enum/tags
+// fields (FR-14/FR-3), so a composed board filters with no code. Returns
+// `[{ key, label, type }]` for each filterable field. NOTE: free-text `q` is NOT a
+// filter here — full-text search is Story 9.1 (server FTS5); don't reintroduce a
+// second client text search.
+export function buildFilters(descriptor) {
+  if (!descriptor || !Array.isArray(descriptor.fields)) return [];
+  return descriptor.fields
+    .filter((f) => f.type === "enum" || f.type === "tags")
+    .map((f) => ({ key: f.key, label: f.label, type: f.type, values: f.values || null }));
+}
+
+// Pure filter predicate: an item matches when, for EVERY active filter, its value
+// for that field (resolved via the shape bridge) matches — enum: equality; tags:
+// array-includes. An empty filter set passes all. (AND across filters.)
+export function matchesFilters(item, activeFilters, descriptor) {
+  if (!activeFilters) return true;
+  const byKey = new Map((descriptor && descriptor.fields ? descriptor.fields : []).map((f) => [f.key, f]));
+  for (const [key, sel] of Object.entries(activeFilters)) {
+    if (sel == null || sel === "") continue; // inactive filter
+    const field = byKey.get(key);
+    if (!field) continue;
+    const value = getFieldValue(item, key);
+    if (field.type === "tags") {
+      if (!Array.isArray(value) || !value.includes(sel)) return false;
+    } else if (value !== sel) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function collectionChrome(collection) {
   const isInspiration = collection.type === "inspiration";
   const isGrid = collection.view === "grid";

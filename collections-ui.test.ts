@@ -15,6 +15,8 @@ import {
   topicCounts,
   selectView,
   itemFieldEntries,
+  buildFilters,
+  matchesFilters,
 } from "./collections-ui.js";
 
 const COLLECTIONS = [
@@ -214,4 +216,43 @@ test("itemFieldEntries bridges the flat-JSON nested shape via dotted keys", () =
     ["design.steal_this", "x"],
     ["favorite_reason", "good"],
   ]);
+});
+
+// --- Story 8.2: descriptor-driven filters ---
+
+const FILTER_DESCRIPTOR = { view: "list", fields: [
+  { key: "type", label: "Type", type: "enum", values: ["article", "video"] },
+  { key: "topics", label: "Topics", type: "tags" },
+  { key: "summary", label: "Summary", type: "text" },   // not filterable
+  { key: "rank", label: "Rank", type: "number" },        // not filterable
+] };
+
+test("buildFilters derives filters from enum/tags fields only (synthetic descriptor)", () => {
+  const filters = buildFilters(FILTER_DESCRIPTOR);
+  assert.deepEqual(filters.map((f) => f.key), ["type", "topics"]); // text/number excluded
+  assert.equal(filters.find((f) => f.key === "type").type, "enum");
+  assert.deepEqual(filters.find((f) => f.key === "type").values, ["article", "video"]);
+  assert.equal(buildFilters(undefined).length, 0);
+});
+
+test("matchesFilters: enum equality + tags includes, AND across filters, empty passes all", () => {
+  const item = { fields: { type: "article", topics: ["ai", "rag"] } };
+  assert.ok(matchesFilters(item, {}, FILTER_DESCRIPTOR), "empty filter passes all");
+  assert.ok(matchesFilters(item, { type: "article" }, FILTER_DESCRIPTOR));
+  assert.ok(!matchesFilters(item, { type: "video" }, FILTER_DESCRIPTOR), "wrong enum excluded");
+  assert.ok(matchesFilters(item, { topics: "rag" }, FILTER_DESCRIPTOR), "tag present");
+  assert.ok(!matchesFilters(item, { topics: "vision" }, FILTER_DESCRIPTOR), "tag absent excluded");
+  assert.ok(matchesFilters(item, { type: "article", topics: "ai" }, FILTER_DESCRIPTOR), "AND both match");
+  assert.ok(!matchesFilters(item, { type: "article", topics: "vision" }, FILTER_DESCRIPTOR), "AND one fails");
+});
+
+test("matchesFilters bridges the nested flat-JSON shape", () => {
+  const insp = { meta: { audience: "b2b", tags: ["dark-theme"] } };
+  const d = { view: "grid", fields: [
+    { key: "meta.audience", label: "Audience", type: "enum", values: ["b2b"] },
+    { key: "meta.tags", label: "Tags", type: "tags" },
+  ] };
+  assert.ok(matchesFilters(insp, { "meta.audience": "b2b" }, d));
+  assert.ok(matchesFilters(insp, { "meta.tags": "dark-theme" }, d));
+  assert.ok(!matchesFilters(insp, { "meta.audience": "consumer" }, d));
 });
