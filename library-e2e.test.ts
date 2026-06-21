@@ -10,6 +10,22 @@ import { BOOKMARKS_FILE, getCollection } from "./storage.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LIBRARY_FILE = path.join(__dirname, getCollection("library").dataFile);
 
+// library.json / bookmarks.json are gitignored personal-capture files (absent in
+// CI). Snapshot tolerates a missing file (returns null); restore puts the original
+// contents back, or removes a file the test created — so a fresh checkout stays clean.
+function snapshot(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+function restore(file: string, snap: string | null): void {
+  if (snap === null) fs.rmSync(file, { force: true });
+  else fs.writeFileSync(file, snap);
+}
+
 const FIXED_ANALYSIS = {
   title: "How Agents Work",
   summary: "An introduction to AI agent architectures and their components.",
@@ -26,8 +42,8 @@ const FIXED_ANALYSIS = {
 // --- Library add: full pipeline round trip ---
 
 test("library add: appends one valid entry to library.json, leaves bookmarks.json untouched", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
-  const bmSnapshot = fs.readFileSync(BOOKMARKS_FILE, "utf-8");
+  const libSnapshot = snapshot(LIBRARY_FILE);
+  const bmSnapshot = snapshot(BOOKMARKS_FILE);
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "board-e2e-"));
   const resultFile = path.join(tempDir, "result.json");
 
@@ -62,14 +78,14 @@ test("library add: appends one valid entry to library.json, leaves bookmarks.jso
     const result = JSON.parse(fs.readFileSync(resultFile, "utf-8"));
     assert.deepEqual(result, entry);
 
-    // bookmarks.json is byte-for-byte unchanged
+    // bookmarks.json is byte-for-byte unchanged (or still absent, as in CI)
     assert.equal(
-      fs.readFileSync(BOOKMARKS_FILE, "utf-8"),
+      snapshot(BOOKMARKS_FILE),
       bmSnapshot,
       "bookmarks.json must not be modified by a library add"
     );
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    restore(LIBRARY_FILE, libSnapshot);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -77,7 +93,7 @@ test("library add: appends one valid entry to library.json, leaves bookmarks.jso
 // --- Library refetch: preserves notes ---
 
 test("library refetch: updates entry and preserves user notes field", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
+  const libSnapshot = snapshot(LIBRARY_FILE);
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "board-e2e-"));
   const resultFile = path.join(tempDir, "result.json");
 
@@ -127,7 +143,7 @@ test("library refetch: updates entry and preserves user notes field", async () =
     assert.equal(result.notes, "my personal research notes");
     assert.equal(result.title, "Updated Title");
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    restore(LIBRARY_FILE, libSnapshot);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
