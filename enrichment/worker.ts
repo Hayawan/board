@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 
 import { boards, items } from '../db/schema.js';
 import { writeItemDirect } from '../db/queue.js';
-import { enrichableTargets, type BoardDescriptor, type Field } from '../descriptor/types.js';
+import type { BoardDescriptor, Field } from '../descriptor/types.js';
 import type { LLMProvider } from '../skills/types.js';
 import type { DbHandle } from '../db/index.js';
 
@@ -82,16 +82,18 @@ export async function runEnrichmentForItem(
   if (!descriptor) throw new Error(`Cannot enrich: board "${item.boardId}" has no descriptor`);
 
   const schema = buildEnrichmentSchema(descriptor);
-  const enrichableKeys = new Set(enrichableTargets(descriptor));
-  if (enrichableKeys.size === 0) return; // nothing to enrich
+  // The schema's keys ARE exactly the enrichable, LLM-emittable (non-image) fields —
+  // use them as the write allowlist so the filter and schema can't diverge.
+  const allowedKeys = new Set(Object.keys(schema.shape));
+  if (allowedKeys.size === 0) return; // nothing to enrich
 
   const prompt = buildEnrichmentPrompt(descriptor, item);
   const result = await args.llm.complete(prompt, schema); // may throw (disabled/schema/transport)
 
-  // Write ONLY enrichable keys (defensive filter — never overwrite user/system fields).
+  // Write ONLY allowed keys (defensive filter — never overwrite user/system fields).
   const enriched: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(result as Record<string, unknown>)) {
-    if (enrichableKeys.has(k) && v !== undefined) enriched[k] = v;
+    if (allowedKeys.has(k) && v !== undefined) enriched[k] = v;
   }
   const mergedFields = { ...((item.fields as Record<string, unknown>) ?? {}), ...enriched };
   writeItemDirect(handle, { ...item, id: item.id, boardId: item.boardId, fields: mergedFields });
