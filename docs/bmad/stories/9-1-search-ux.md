@@ -42,8 +42,8 @@ so that I can re-find things.
 - [x] **Task 2 — Implement the search query over FTS5 (correct sanitization)** (AC: 1, 2, 3, 4)
   - [x] Query the FTS5 table (Story 1.4) ranked (bm25/`rank`), joined to `item`, scoped to the active board (AC 3). **Sanitize correctly:** a parameterized `MATCH ?` stops SQL injection but NOT FTS5 *syntax* errors — SQLite still hands the bound value to the FTS5 query parser, so `foo"bar` still throws. Wrap the whole input as a single quoted phrase AND double embedded quotes: `const ftsQuery = '"' + q.replace(/"/g, '""') + '"';` then `MATCH ?` with `ftsQuery`. (AC 4.)
   - [x] Expose it as a **`search` skill** (`POST /skills/:name`) — the AD11 default (every capability is a skill); a raw REST GET is the exception, not a neutral equal. (If a GET is chosen for UI simplicity, cite AD11 as the exception + justify.)
-- [x] **Task 3 — Build the search UI** (AC: 3, 4)
-  - [x] A search input (the prototype has a client-side `q` in `matchesLibraryFilters` — recon — that Story 8.2 dropped in favor of server FTS5; this is its server-backed replacement). On query, call the search endpoint, render results in the board's view. Compose with active filters (Story 8.2 AC 5) — AND them.
+- [ ] **Task 3 — Build the search UI** (AC: 3, 4) — STAGED (DOM; Chrome offline). The server search + skill + client-compose mechanism are delivered; the input-box wiring lands with the UI cutover.
+  - [ ] A search input (the prototype has a client-side `q` in `matchesLibraryFilters` — recon — that Story 8.2 dropped in favor of server FTS5; this is its server-backed replacement). On query, call the search endpoint, render results in the board's view. Compose with active filters (Story 8.2 AC 5) — AND them.
 - [x] **Task 4 — Wire tests + verify green** (AC: 5)
   - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
