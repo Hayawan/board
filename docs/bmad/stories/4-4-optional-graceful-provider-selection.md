@@ -1,6 +1,6 @@
 # Story 4.4: Optional & graceful provider selection (zero-coding-CLI default)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,19 +34,19 @@ so that nothing requires a coding CLI or an API key to start.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing selection tests first (TDD)** (AC: 1, 2, 4, 5, 6)
-  - [ ] Create `llm/select-provider.test.ts`: `selectProvider(config)` → `disabledLlm` (empty) / `HttpProvider` (HTTP) / `CliProvider` (CLI) / documented winner (both-set, AC 4); assert `disabledLlm.complete(...)` **throws `EnrichmentDisabledError`** (AC 5 — the typed throw, not "no throw"). Do NOT assert the captured-not-error degrade here (that's Story 7.1's catch).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement `selectProvider(config)`** (AC: 1, 2, 3)
-  - [ ] Create `llm/select-provider.ts`: read the provider config (Story 2.1). Precedence: explicit HTTP config (base-URL+key OR base-URL for open model) → `HttpProvider`; explicit CLI config (`BOARD_ANALYSIS_AGENT`) → `CliProvider`; nothing → `disabledLlm`. Document the precedence (what wins if both are set — recommend: explicit HTTP key wins, or surface a config error; decide and document).
-  - [ ] **Default = `disabledLlm`** (no-AI). The CLI path is opt-in only — never the default (C10).
-- [ ] **Task 3 — Wire the selected provider into `ctx`/server boot** (AC: 1, 2)
-  - [ ] At server boot (Story 3.2's ctx builder), set `ctx.llm = selectProvider(config)`. So every skill/worker gets the right provider (or `disabledLlm`) without knowing which transport.
-- [ ] **Task 4 — Pin the `disabledLlm` throw contract + document the degrade hand-off** (AC: 5)
-  - [ ] `disabledLlm.complete` **throws `EnrichmentDisabledError`** (declared in Story 3.1). This story confirms/uses that — it does NOT add a sentinel-return alternative.
-  - [ ] **Document the hand-off (do not implement the catch here):** **Story 5.2's** worker status-classification handler catches `EnrichmentDisabledError` → resolves the item to **`status=done` with empty enrichable fields** (NOT `status=error`/`error_reason`), so a no-AI board is full of dignified un-enriched cards (UJ-2, rendered by Story 8.5), not error cards. There is no new "captured-not-error" status — it's `done` per the §4.5 enum. State this contract so 5.2/8.5 rely on it; the catch + status logic is built in Story 5.2, not here.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing selection tests first (TDD)** (AC: 1, 2, 4, 5, 6)
+  - [x] Create `llm/select-provider.test.ts`: `selectProvider(config)` → `disabledLlm` (empty) / `HttpProvider` (HTTP) / `CliProvider` (CLI) / documented winner (both-set, AC 4); assert `disabledLlm.complete(...)` **throws `EnrichmentDisabledError`** (AC 5 — the typed throw, not "no throw"). Do NOT assert the captured-not-error degrade here (that's Story 7.1's catch).
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement `selectProvider(config)`** (AC: 1, 2, 3)
+  - [x] Create `llm/select-provider.ts`: read the provider config (Story 2.1). Precedence: explicit HTTP config (base-URL+key OR base-URL for open model) → `HttpProvider`; explicit CLI config (`BOARD_ANALYSIS_AGENT`) → `CliProvider`; nothing → `disabledLlm`. Document the precedence (what wins if both are set — recommend: explicit HTTP key wins, or surface a config error; decide and document).
+  - [x] **Default = `disabledLlm`** (no-AI). The CLI path is opt-in only — never the default (C10).
+- [x] **Task 3 — Wire the selected provider into `ctx`/server boot** (AC: 1, 2)
+  - [x] At server boot (Story 3.2's ctx builder), set `ctx.llm = selectProvider(config)`. So every skill/worker gets the right provider (or `disabledLlm`) without knowing which transport.
+- [x] **Task 4 — Pin the `disabledLlm` throw contract + document the degrade hand-off** (AC: 5)
+  - [x] `disabledLlm.complete` **throws `EnrichmentDisabledError`** (declared in Story 3.1). This story confirms/uses that — it does NOT add a sentinel-return alternative.
+  - [x] **Document the hand-off (do not implement the catch here):** **Story 5.2's** worker status-classification handler catches `EnrichmentDisabledError` → resolves the item to **`status=done` with empty enrichable fields** (NOT `status=error`/`error_reason`), so a no-AI board is full of dignified un-enriched cards (UJ-2, rendered by Story 8.5), not error cards. There is no new "captured-not-error" status — it's `done` per the §4.5 enum. State this contract so 5.2/8.5 rely on it; the catch + status logic is built in Story 5.2, not here.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -88,10 +88,29 @@ so that nothing requires a coding CLI or an API key to start.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 206 pass / 0 fail (199 prior + 7 new selection tests). **Epic 4 complete.**
+
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied.
+- **`selectProvider(config)`** with a NO-AI default (C10): no provider config → `disabledLlm` (the throwing sentinel). HTTP (base-URL + model) → `HttpProvider`; CLI (`agent ∈ {claude, codex}`) → `CliProvider`; anything else → `disabledLlm`.
+- **Precedence decided + tested (AC4):** an explicit HTTP base-URL+model **wins** over a CLI agent when both are set — documented in the module and asserted.
+- **Graceful, never blocks boot (NFR-4):** an unknown agent (e.g. `cursor`, out of scope) or a base-URL with no model degrades to `disabledLlm` rather than throwing at boot.
+- **Default reversed from the prototype:** the prototype defaulted to the claude CLI; v1's default is no-AI (the coding CLI is opt-in).
+- **Wired into ctx (Task 3):** `buildServer` sets `ctx.llm = opts.llm ?? selectProvider(config)`, so every skill/worker gets the right transport (or `disabledLlm`) transport-agnostically.
+- **`disabledLlm.complete` throws `EnrichmentDisabledError` (AC5)** — asserted as the typed throw. The catch-and-degrade (disabled enrichment → `status=done` with empty fields, never `status=error`) is **Story 5.2's** rule (referenced, not implemented here; rendered by 8.5).
+
 ### File List
+
+- `llm/select-provider.ts` (new) — `selectProvider(config)` with no-AI default + HTTP-wins precedence.
+- `llm/select-provider.test.ts` (new) — 7 tests (empty/HTTP/CLI/both/unknown-agent/base-url-no-model/disabled-throw).
+- `server.ts` (modified) — ctx `llm` now `selectProvider(config)`.
+- `package.json` (modified) — appended the test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 4.4 implemented: selectProvider with no-AI default (C10), HTTP-wins precedence, graceful degrade for misconfig, wired into server ctx. Epic 4 complete. Status → review.

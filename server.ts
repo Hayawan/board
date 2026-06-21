@@ -17,7 +17,8 @@ import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
 import { enqueueWrite } from "./db/queue.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
-import { buildCtx, disabledLlm, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
+import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
+import { selectProvider } from "./llm/select-provider.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -405,7 +406,8 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   })();
   const logger: Logger = opts.logger ?? console;
   const queue: JobQueue = opts.queue ?? { enqueueWrite };
-  const llm: LLMProvider = opts.llm ?? disabledLlm; // Epic 4 selects the real provider
+  // Story 4.4: pick the transport from config (or disabledLlm = no-AI default).
+  const llm: LLMProvider = opts.llm ?? selectProvider(config);
 
   app.post<{ Params: { name: string }; Body: unknown }>(
     "/skills/:name",
