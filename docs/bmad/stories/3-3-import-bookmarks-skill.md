@@ -1,6 +1,6 @@
 # Story 3.3: import-bookmarks skill
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,18 +28,18 @@ so that import is a first-class, invokable capability rather than a one-off scri
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing skill test first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `skills/import-bookmarks.test.ts`: mock ctx (temp DB + seeded boards); run the skill on a 2–3-record payload; assert items under the target board with `status=pending`; run again; assert no duplicates.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Define the skill's zod in/out schemas** (AC: 1)
-  - [ ] `inputSchema`: `{ boardId: string, bookmarks: z.array(z.record(z.unknown())) }` — the records are descriptor-shaped/freeform, so use `z.record(z.unknown())`, **NOT `z.any()`** (FR-19 forbids `any`-typed I/O). `outputSchema`: `{ created: number, skipped: number, itemIds: string[] }`. (The `source`-flat-file path is the optional migration convenience; the payload form is the v1-must that satisfies the AC.)
-- [ ] **Task 3 — Implement the skill wrapping the 1.5 per-record mapper** (AC: 1, 2, 3)
-  - [ ] Create `skills/import-bookmarks.ts`: a skill (via `defineSkill`) whose `run(input, ctx)` validates the target board exists, then calls Story 1.5's **`importRecords({ boardId, records, db: ctx.db })`** (layer (a), the board-agnostic mapper that writes through the typed item-write helper so `status=pending`, `search_blob`/FTS maintained, dedupe by preserved `item.id`). Return the created/skipped counts.
-  - [ ] If supporting the flat-file migration path (FR-20 part 1 reuse), accept an optional `source` mode that delegates to 1.5's `importFlatJson` wrapper (graceful when files absent). This is optional; the payload form is required.
-- [ ] **Task 4 — Register the skill at boot** (AC: 1)
-  - [ ] Add `import-bookmarks` to `registerAllSkills(registry)` (Story 3.1/3.2). Confirm it's invokable via `POST /skills/import-bookmarks` (the 3.2 route).
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing skill test first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `skills/import-bookmarks.test.ts`: mock ctx (temp DB + seeded boards); run the skill on a 2–3-record payload; assert items under the target board with `status=pending`; run again; assert no duplicates.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Define the skill's zod in/out schemas** (AC: 1)
+  - [x] `inputSchema`: `{ boardId: string, bookmarks: z.array(z.record(z.unknown())) }` — the records are descriptor-shaped/freeform, so use `z.record(z.unknown())`, **NOT `z.any()`** (FR-19 forbids `any`-typed I/O). `outputSchema`: `{ created: number, skipped: number, itemIds: string[] }`. (The `source`-flat-file path is the optional migration convenience; the payload form is the v1-must that satisfies the AC.)
+- [x] **Task 3 — Implement the skill wrapping the 1.5 per-record mapper** (AC: 1, 2, 3)
+  - [x] Create `skills/import-bookmarks.ts`: a skill (via `defineSkill`) whose `run(input, ctx)` validates the target board exists, then calls Story 1.5's **`importRecords({ boardId, records, db: ctx.db })`** (layer (a), the board-agnostic mapper that writes through the typed item-write helper so `status=pending`, `search_blob`/FTS maintained, dedupe by preserved `item.id`). Return the created/skipped counts.
+  - [x] If supporting the flat-file migration path (FR-20 part 1 reuse), accept an optional `source` mode that delegates to 1.5's `importFlatJson` wrapper (graceful when files absent). This is optional; the payload form is required.
+- [x] **Task 4 — Register the skill at boot** (AC: 1)
+  - [x] Add `import-bookmarks` to `registerAllSkills(registry)` (Story 3.1/3.2). Confirm it's invokable via `POST /skills/import-bookmarks` (the 3.2 route).
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -85,10 +85,29 @@ so that import is a first-class, invokable capability rather than a one-off scri
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 166 pass / 0 fail (162 prior + 4 new skill tests). No `./data` pollution.
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied.
+- **`import-bookmarks` skill** = a thin `defineSkill` wrapper over Story 1.5's `importRecords` (the board-agnostic mapper) — mapping is NOT forked. `run` validates the target board exists (throws a clear error → 500 via the route if not), then delegates to `importRecords({ handle: ctx.db, boardId, records })`. Items land at `status=pending` (schema default), search_blob/FTS maintained by the writer.
+- **Dedupe (AC2):** refactored `importRecords` to be **global dedupe by `item.id`** — it now SELECTs each record id and **skips** existing ones (instead of upserting), returning `{ created, skipped, itemIds }`. So a second run reports `created=0, skipped=N` and never duplicates or clobbers user edits. (1.5's `importFlatJson` still idempotent — it now reads `.created`; the 1.5 tests assert DB state, which is unchanged.)
+- **Schemas (FR-19):** `input = { boardId: string, bookmarks: z.array(z.record(z.unknown())) }` (records freeform but NOT `z.any()`); `output = { created, skipped, itemIds }`.
+- **Registered** in `registerAllSkills` → invokable via `POST /skills/import-bookmarks` (the 3.2 route).
+- **Tests:** mock ctx + temp seeded DB + 2-record payload; asserts created=2/skipped=0/status=pending, second-run created=0/skipped=2/no-dup (the OUTPUT counts, per AC4), unknown-board throws, and zod shape rejection.
+
 ### File List
+
+- `skills/import-bookmarks.ts` (new) — the skill (thin wrapper + board validation).
+- `skills/import-bookmarks.test.ts` (new) — 4 tests (create/pending, dedupe counts, unknown board, schema).
+- `db/importer.ts` (modified) — `importRecords` now skip-existing dedupe + returns `{created,skipped,itemIds}`; `importFlatJson` reads `.created`.
+- `skills/registry.ts` (modified) — `registerAllSkills` registers `import-bookmarks`.
+- `package.json` (modified) — appended the skill test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 3.3 implemented: import-bookmarks skill wrapping the 1.5 importer core; importRecords upgraded to global id-dedupe with created/skipped reporting; registered on the generic route. Status → review.

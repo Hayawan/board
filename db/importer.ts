@@ -1,8 +1,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 
+import { eq } from 'drizzle-orm';
+
 import { writeItem } from './queue.js';
+import { items, type NewItem, type NewAsset } from './schema.js';
 import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID } from './seed.js';
-import type { NewItem, NewAsset } from './schema.js';
 import type { DbHandle } from './index.js';
 
 // Story 1.5 — flat-JSON → SQLite importer.
@@ -103,14 +105,23 @@ export interface ImportRecordsArgs {
   records: RawRecord[];
 }
 
+export interface ImportResult {
+  created: number;
+  skipped: number;
+  itemIds: string[];
+}
+
 /**
  * Layer (a): map an in-memory record array onto items under `boardId` and write
- * them through the typed single-writer path. Returns the number of items written.
+ * them through the typed single-writer path. Dedupe is GLOBAL by `item.id` (the
+ * preserved record id is the PK): a record whose id already exists is skipped, not
+ * re-written — so re-running is idempotent AND user edits to existing items aren't
+ * clobbered. Returns created/skipped counts + the created item ids.
  */
-export async function importRecords({ handle, boardId, records }: ImportRecordsArgs): Promise<number> {
+export async function importRecords({ handle, boardId, records }: ImportRecordsArgs): Promise<ImportResult> {
   const mapper = MAPPERS[boardId];
   if (!mapper) throw new Error(`No importer mapping registered for board "${boardId}"`);
-  let written = 0;
+  const result: ImportResult = { created: 0, skipped: 0, itemIds: [] };
   for (const [i, r] of records.entries()) {
     // Fail loud on a missing id — it is the idempotency/dedupe key. Without this,
     // id-less records would all collapse to the string "undefined" and overwrite
@@ -118,11 +129,18 @@ export async function importRecords({ handle, boardId, records }: ImportRecordsA
     if (r.id === undefined || r.id === null || String(r.id).length === 0) {
       throw new Error(`Record at index ${i} for board "${boardId}" is missing a required \`id\``);
     }
+    const id = String(r.id);
+    const existing = handle.db.select().from(items).where(eq(items.id, id)).get();
+    if (existing) {
+      result.skipped += 1;
+      continue;
+    }
     const { item, assets: itemAssets } = mapper(r, boardId);
     await writeItem(handle, item, itemAssets);
-    written += 1;
+    result.created += 1;
+    result.itemIds.push(id);
   }
-  return written;
+  return result;
 }
 
 export interface ImportFlatJsonArgs {
@@ -159,10 +177,10 @@ export async function importFlatJson({
   const result = { inspiration: 0, library: 0 };
 
   const insp = readRecords(inspirationPath, logger);
-  if (insp) result.inspiration = await importRecords({ handle, boardId: INSPIRATION_BOARD_ID, records: insp });
+  if (insp) result.inspiration = (await importRecords({ handle, boardId: INSPIRATION_BOARD_ID, records: insp })).created;
 
   const lib = readRecords(libraryPath, logger);
-  if (lib) result.library = await importRecords({ handle, boardId: LIBRARY_BOARD_ID, records: lib });
+  if (lib) result.library = (await importRecords({ handle, boardId: LIBRARY_BOARD_ID, records: lib })).created;
 
   logger.info(`[import] imported ${result.inspiration} inspiration + ${result.library} library items`);
   return result;

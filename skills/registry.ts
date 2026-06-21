@@ -1,3 +1,4 @@
+import { importBookmarksSkill } from './import-bookmarks.js';
 import type { Skill } from './types.js';
 
 // Story 3.1 — the skill registry. A FACTORY (not a module-global Map) so each
@@ -40,6 +41,7 @@ export function createRegistry(): SkillRegistry {
  * stories: import-bookmarks (3.3), create-board/add-item/tag (3.4),
  * generate-fields (10.3), compose-board (10.1).
  */
-export function registerAllSkills(_registry: SkillRegistry): void {
-  // (no skills yet — 3.3/3.4 and Epic 10 register here)
+export function registerAllSkills(registry: SkillRegistry): void {
+  registry.register(importBookmarksSkill); // Story 3.3
+  // 3.4 (create-board/add-item/tag) and Epic 10 (compose-board/generate-fields) add here.
 }
