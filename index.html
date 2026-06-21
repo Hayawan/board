@@ -631,6 +631,40 @@
     }
     .coll-btn.coll-new { font-size: 17px; }
 
+    /* Board field editor — each field is its own grouped container with breathing room. */
+    .board-field-edit {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .board-field-edit:hover { border-color: var(--border-hover); }
+    .board-field-edit .bf-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 0.9fr auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .bf-key-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .bf-remove { padding: 6px 9px; align-self: stretch; }
+    /* AI toggle pill — accent when on, muted when off. */
+    .bf-ai {
+      padding: 6px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .bf-ai:hover { border-color: var(--border-hover); color: var(--text-2); }
+    .bf-ai[data-on="true"] { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
     /* ── Main Layout ── */
     main {
       padding: 24px 20px;
@@ -1547,14 +1581,16 @@
   function boardFieldRowHtml(field, isExisting) {
     const f = field || { key: '', label: '', type: 'text', enrichable: true, description: '', values: [] };
     const typeOpts = BOARD_FIELD_TYPES.map(t => `<option value="${t}"${f.type === t ? ' selected' : ''}>${t}</option>`).join('');
-    return `<div class="board-field-edit" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr auto auto;gap:6px;align-items:center;margin-bottom:6px">
-      <input class="bf-label reflection-input" style="margin:0" value="${esc(f.label || '')}" placeholder="Label">
-      <input class="bf-key reflection-input" style="margin:0;font-family:monospace;font-size:12px" value="${esc(f.key || '')}" placeholder="key" ${isExisting ? 'readonly title="key is fixed for existing fields"' : ''}>
-      <select class="bf-type reflection-input" style="margin:0">${typeOpts}</select>
-      <label style="font-size:12px;color:var(--text-2);white-space:nowrap"><input type="checkbox" class="bf-enrichable"${f.enrichable ? ' checked' : ''}> AI</label>
-      <button class="bf-remove btn btn-ghost" style="padding:4px 8px" title="Remove field">✕</button>
-      <input class="bf-desc reflection-input" style="margin:0;grid-column:1 / 4" value="${esc(f.description || '')}" placeholder="Description / AI hint (what goes in this field)">
-      <input class="bf-values reflection-input" style="margin:0;grid-column:4 / 6;${f.type === 'enum' ? '' : 'display:none'}" value="${esc((f.values || []).join(', '))}" placeholder="enum values (comma-separated)">
+    return `<div class="board-field-edit">
+      <div class="bf-grid">
+        <input class="bf-label reflection-input" value="${esc(f.label || '')}" placeholder="Label">
+        <input class="bf-key reflection-input bf-key-input" value="${esc(f.key || '')}" placeholder="key" ${isExisting ? 'readonly title="key is fixed for existing fields"' : ''}>
+        <select class="bf-type reflection-input">${typeOpts}</select>
+        <button type="button" class="bf-ai" data-on="${f.enrichable ? 'true' : 'false'}" title="Toggle whether the AI fills this field">AI</button>
+        <button type="button" class="bf-remove btn btn-ghost" title="Remove field">✕</button>
+        <input class="bf-desc reflection-input" style="grid-column:1 / 4" value="${esc(f.description || '')}" placeholder="Description / AI hint (what goes in this field)">
+        <input class="bf-values reflection-input" style="grid-column:4 / 6;${f.type === 'enum' ? '' : 'display:none'}" value="${esc((f.values || []).join(', '))}" placeholder="enum values (comma-separated)">
+      </div>
     </div>`;
   }
 
@@ -1564,6 +1600,8 @@
     typeSel.onchange = () => {
       row.querySelector('.bf-values').style.display = typeSel.value === 'enum' ? '' : 'none';
     };
+    const ai = row.querySelector('.bf-ai');
+    ai.onclick = () => { ai.dataset.on = ai.dataset.on === 'true' ? 'false' : 'true'; };
   }
 
   function openEditBoardModal(boardId) {
@@ -1660,7 +1698,7 @@
       let key = row.querySelector('.bf-key').value.trim();
       if (!key && label) key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
       const type = row.querySelector('.bf-type').value;
-      const f = { key, label, type, enrichable: row.querySelector('.bf-enrichable').checked };
+      const f = { key, label, type, enrichable: row.querySelector('.bf-ai').dataset.on === 'true' };
       const desc = row.querySelector('.bf-desc').value.trim();
       if (desc) f.description = desc;
       if (type === 'enum') f.values = row.querySelector('.bf-values').value.split(',').map(s => s.trim()).filter(Boolean);
