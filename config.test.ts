@@ -55,6 +55,16 @@ describe('loadConfig (Story 2.1)', () => {
     assert.throws(() => loadConfig({ PORT: 'abc' }), /PORT/);
     assert.throws(() => loadConfig({ PORT: '-5' }), /PORT/);
     assert.throws(() => loadConfig({ PORT: '70000' }), /PORT/);
+    assert.throws(() => loadConfig({ PORT: '3141.5' }), /PORT/); // decimals rejected
+    assert.throws(() => loadConfig({ PORT: '0x10' }), /PORT/); // hex rejected
+    assert.throws(() => loadConfig({ PORT: '0' }), /PORT/); // out of range
+  });
+
+  // providerEnabled — a model name alone must NOT enable AI (no-AI default)
+  it('does not enable the provider when only a model name is set', () => {
+    assert.equal(loadConfig({ LLM_MODEL: 'gpt-x' }).providerEnabled, false);
+    assert.equal(loadConfig({ LLM_API_KEY: 'sk-x' }).providerEnabled, true);
+    assert.equal(loadConfig({ LLM_AGENT: 'claude' }).providerEnabled, true);
   });
 
   // AC 5 — the provider key never leaks into logs/serialized config
@@ -68,6 +78,16 @@ describe('loadConfig (Story 2.1)', () => {
     assert.equal(c.provider.apiKey, 'sk-supersecret-zzz');
   });
 
+  // AC 5 — the NESTED provider object must not leak when serialized/logged directly
+  it('does not leak the key when the provider sub-object is serialized directly', () => {
+    const c = loadConfig({ LLM_API_KEY: 'sk-nested-leak' });
+    assert.doesNotMatch(JSON.stringify(c.provider), /sk-nested-leak/);
+    assert.doesNotMatch(inspect(c.provider), /sk-nested-leak/);
+    // spread / Object.entries of config (which drop the non-enumerable toJSON) too
+    assert.doesNotMatch(JSON.stringify({ ...c }), /sk-nested-leak/);
+    assert.doesNotMatch(inspect(Object.fromEntries(Object.entries(c.provider))), /sk-nested-leak/);
+  });
+
   // Provider env legacy aliases (keep the prototype CLI path working)
   it('folds legacy BOARD_ANALYSIS_AGENT / model env as provider aliases', () => {
     const c = loadConfig({ BOARD_ANALYSIS_AGENT: 'claude', BOARD_CLAUDE_MODEL: 'claude-x' });
@@ -78,5 +98,13 @@ describe('loadConfig (Story 2.1)', () => {
     assert.equal(codex.provider.model, 'codex-y');
     // explicit LLM_* wins over the legacy alias
     assert.equal(loadConfig({ BOARD_ANALYSIS_AGENT: 'claude', LLM_AGENT: 'codex' }).provider.agent, 'codex');
+    // legacy model is resolved BY AGENT (mirrors the prototype): codex agent + both
+    // model vars set → the codex model, not the claude one.
+    const both = loadConfig({
+      BOARD_ANALYSIS_AGENT: 'codex',
+      BOARD_CLAUDE_MODEL: 'claude-m',
+      BOARD_CODEX_MODEL: 'codex-m',
+    });
+    assert.equal(both.provider.model, 'codex-m');
   });
 });

@@ -59,15 +59,35 @@ function parsePort(value: string | undefined, fallback: number): number {
  * error on a malformed value rather than producing NaN / silently defaulting.
  */
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
+  // LLM_* are the canonical names; the prototype's BOARD_* are accepted as aliases
+  // so the existing CLI path keeps working. Canonical wins over legacy.
+  const agent = clean(env.LLM_AGENT) ?? clean(env.BOARD_ANALYSIS_AGENT) ?? null;
+  // Legacy model resolution mirrors the prototype's by-agent pick
+  // (resolveAnalysisAgent in add.ts): claude→BOARD_CLAUDE_MODEL, else→BOARD_CODEX_MODEL.
+  const legacyModel =
+    agent === 'codex'
+      ? clean(env.BOARD_CODEX_MODEL)
+      : agent === 'claude'
+        ? clean(env.BOARD_CLAUDE_MODEL)
+        : (clean(env.BOARD_CLAUDE_MODEL) ?? clean(env.BOARD_CODEX_MODEL));
+  const apiKey = clean(env.LLM_API_KEY) ?? null;
+
   const provider: ProviderConfig = {
-    // LLM_* are the canonical names; the prototype's BOARD_* are accepted as aliases
-    // so the existing CLI path keeps working. Canonical wins over legacy.
-    agent: clean(env.LLM_AGENT) ?? clean(env.BOARD_ANALYSIS_AGENT) ?? null,
-    model:
-      clean(env.LLM_MODEL) ?? clean(env.BOARD_CLAUDE_MODEL) ?? clean(env.BOARD_CODEX_MODEL) ?? null,
+    agent,
+    model: clean(env.LLM_MODEL) ?? legacyModel ?? null,
     baseUrl: clean(env.LLM_BASE_URL) ?? null,
-    apiKey: clean(env.LLM_API_KEY) ?? null,
+    // apiKey is set NON-ENUMERABLE below so it drops out of JSON.stringify /
+    // util.inspect / spread / Object.entries of `provider` itself (a debug-log of
+    // the provider sub-object must not echo the secret — NFR-3), while staying
+    // programmatically reachable for Epic 4.
+    apiKey: null,
   };
+  Object.defineProperty(provider, 'apiKey', {
+    value: apiKey,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
 
   const config: Config = {
     port: parsePort(env.PORT, 3141),
