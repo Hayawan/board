@@ -154,6 +154,44 @@ export function renderEnrichmentState(item, descriptor, opts = {}) {
     : `<div class="enrich-state enrich-disabled">Enrichment disabled</div>`;
 }
 
+// Story 8.6: warm zero-config first-run. An empty board must explain itself + invite
+// a paste — never a cold blank grid or a CLI string (UJ-3). The purpose line is a
+// DEFINED, sourced artifact: descriptor.purpose/description if present, else a
+// per-board fallback, else a generic invite (NEVER just the bare name).
+const BOARD_PURPOSE = {
+  inspiration: "Designs worth studying. Paste a URL to capture a site you admire.",
+  library: "Things worth keeping. Paste a link to save and summarize an article or paper.",
+};
+
+export function boardPurpose(collection) {
+  if (!collection) return "Paste a URL to add your first item.";
+  return (
+    collection.purpose ||
+    (collection.descriptor && collection.descriptor.purpose) ||
+    collection.description ||
+    BOARD_PURPOSE[collection.id] ||
+    `Paste a URL to add your first item to ${collection.name || "this board"}.`
+  );
+}
+
+// Pure warm empty-state markup (one helper replacing the prototype's two cold CLI
+// empty states). Includes the board's PURPOSE line + a paste invitation.
+export function renderEmptyState(collection) {
+  return (
+    `<div class="empty-state">` +
+    `<p class="empty-purpose">${escHtml(boardPurpose(collection))}</p>` +
+    `<p class="empty-hint">Paste a URL above to capture your first item.</p>` +
+    `</div>`
+  );
+}
+
+// Story 8.6: the enable-AI nudge shows ONLY when no provider is configured (Story
+// 4.4 signal) AND it hasn't been dismissed (localStorage). Peripheral + dismissible
+// — never re-shown after dismissal, never shown when AI is on (the board is the hero).
+export function shouldShowEnableAiNudge(opts = {}) {
+  return !opts.providerConfigured && !opts.dismissed;
+}
+
 export function collectionChrome(collection) {
   const isInspiration = collection.type === "inspiration";
   const isGrid = collection.view === "grid";

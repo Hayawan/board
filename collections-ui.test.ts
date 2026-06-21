@@ -19,6 +19,9 @@ import {
   matchesFilters,
   applySseEvent,
   renderEnrichmentState,
+  boardPurpose,
+  renderEmptyState,
+  shouldShowEnableAiNudge,
 } from "./collections-ui.js";
 
 const COLLECTIONS = [
@@ -321,4 +324,26 @@ test("renderEnrichmentState: 'interrupted' (boot-reconcile reason) is shown, not
   const html = renderEnrichmentState({ id: "i", status: "error", errorReason: "interrupted" }, ENRICH_DESCRIPTOR, { providerConfigured: true });
   assert.match(html, /interrupted/);
   assert.doesNotMatch(html, /Couldn't analyze/);
+});
+
+// --- Story 8.6: warm zero-config first-run ---
+
+test("renderEmptyState shows the board's WARM purpose line (not just the name)", () => {
+  const insp = renderEmptyState({ id: "inspiration", name: "Inspiration" });
+  assert.match(insp, /Designs worth studying/);
+  const lib = renderEmptyState({ id: "library", name: "Library" });
+  assert.match(lib, /Things worth keeping/);
+});
+
+test("boardPurpose prefers descriptor.purpose, then per-board fallback, then generic", () => {
+  assert.equal(boardPurpose({ id: "x", purpose: "Custom purpose" }), "Custom purpose");
+  assert.equal(boardPurpose({ id: "x", descriptor: { purpose: "Desc purpose" } }), "Desc purpose");
+  assert.match(boardPurpose({ id: "inspiration" }), /Designs worth studying/);
+  assert.match(boardPurpose({ id: "unknown", name: "My Board" }), /My Board/); // generic invite names the board
+});
+
+test("shouldShowEnableAiNudge: only when no provider AND not dismissed", () => {
+  assert.equal(shouldShowEnableAiNudge({ providerConfigured: false, dismissed: false }), true);
+  assert.equal(shouldShowEnableAiNudge({ providerConfigured: true, dismissed: false }), false, "AI on → no nudge");
+  assert.equal(shouldShowEnableAiNudge({ providerConfigured: false, dismissed: true }), false, "dismissed → stays gone");
 });

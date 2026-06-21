@@ -352,3 +352,17 @@ test("GET /api/meta reports providerConfigured=true when an llm is injected", as
   const res = await app.inject({ method: "GET", url: "/api/meta" });
   assert.equal(JSON.parse(res.body).providerConfigured, true);
 });
+
+// --- Story 8.6: warm zero-config first-run boot ---
+
+test("first-run boot: serves with no LLM config + seeded boards present", async () => {
+  const app = await buildServer(); // no llm, no opts → no-AI first-run
+  const cols = await app.inject({ method: "GET", url: "/api/collections" });
+  assert.equal(cols.statusCode, 200);
+  const ids = JSON.parse(cols.body).map((c: { id: string }) => c.id);
+  assert.ok(ids.includes("inspiration") && ids.includes("library"), "seeded boards present on first run");
+  const meta = await app.inject({ method: "GET", url: "/api/meta" });
+  assert.equal(JSON.parse(meta.body).providerConfigured, false, "no-AI by default (nudge will show)");
+  const index = await app.inject({ method: "GET", url: "/" });
+  assert.equal(index.statusCode, 200, "the app serves the board UI");
+});
