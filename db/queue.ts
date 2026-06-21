@@ -244,15 +244,19 @@ export async function runItemJob(handle: DbHandle, args: RunItemJobArgs): Promis
       setItemStatusDirect(handle, args.itemId, 'processing', null);
       try {
         await args.work(signal);
+        // If the job already timed out, the timeout path OWNS the terminal status —
+        // a late-settling abandoned work must NOT clobber `error` back to `done`.
+        if (signal.aborted) return;
         setItemStatusDirect(handle, args.itemId, 'done', null);
       } catch (err) {
+        if (signal.aborted) return; // timeout already wrote the terminal status
         if (err instanceof EnrichmentDisabledError) {
           setItemStatusDirect(handle, args.itemId, 'done', null); // disabled = done, not error
         } else {
           setItemStatusDirect(handle, args.itemId, 'error', cleanErrorReason(err));
         }
         // swallowed: the terminal status is recorded; the job itself "succeeded" at
-        // managing status. (Timeout is handled below — the run may be abandoned.)
+        // managing status.
       }
     },
   };

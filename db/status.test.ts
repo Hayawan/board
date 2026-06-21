@@ -17,6 +17,12 @@ function manualTimeout(): { fn: TimeoutFn; fire: () => void } {
   let cb: (() => void) | null = null;
   return { fn: (c) => { cb = c; return () => (cb = null); }, fire: () => cb?.() };
 }
+function deferred<T = void>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+const tick = () => new Promise((r) => setImmediate(r));
 
 describe('item status lifecycle (Story 5.2)', () => {
   let dir: string;
@@ -104,6 +110,31 @@ describe('item status lifecycle (Story 5.2)', () => {
     const row = statusOf('hang');
     assert.equal(row?.status, 'error');
     assert.equal(row?.errorReason, 'timed out');
+  });
+
+  // AC 2 — the timeout status is AUTHORITATIVE even if the abandoned work settles late
+  it('keeps status=error when the abandoned work resolves after a timeout', async () => {
+    seedItem('late');
+    const t = manualTimeout();
+    const d = deferred();
+    const p = runItemJob(handle, {
+      itemId: 'late',
+      type: 'capture',
+      timeoutMs: 50,
+      timeoutFn: t.fn,
+      work: async () => { await d.promise; }, // resolves only when we let it, after the timeout
+    });
+    await tick();
+    t.fire();
+    await p;
+    assert.equal(statusOf('late')?.status, 'error');
+    assert.equal(statusOf('late')?.errorReason, 'timed out');
+
+    d.resolve(); // late work completion must NOT clobber the terminal error status
+    await tick();
+    await tick();
+    assert.equal(statusOf('late')?.status, 'error', 'timeout status must survive late work resolution');
+    assert.equal(statusOf('late')?.errorReason, 'timed out');
   });
 
   // AC 4 — boot reconciliation: no item stuck processing across a crash
