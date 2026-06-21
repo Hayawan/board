@@ -20,6 +20,7 @@ import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
 import { startSseStream } from "./sse.js";
+import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -473,6 +474,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ensureDataDir(); // Story 2.2: create DATA_DIR + screenshots on real boot (AC 2)
   // Story 5.2: sweep items orphaned in `processing` by a crash/OOM before serving.
   reconcileInterruptedItems(getDb());
+  // Story 6.1: register capture adapters (6.2–6.4 populate the registry).
+  registerAllCaptureAdapters(captureRegistry);
   const app = await buildServer();
   // Story 2.4: bind is config-driven; default HOST (2.1) is 127.0.0.1 (secure
   // default — only an explicit non-empty HOST exposes it).

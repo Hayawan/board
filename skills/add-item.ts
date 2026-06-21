@@ -4,8 +4,14 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { boards } from '../db/schema.js';
-import { writeItem } from '../db/queue.js';
+import { writeItem, runItemJob } from '../db/queue.js';
+import { captureRegistry, runCaptureForItem } from '../capture/adapter.js';
+import { config } from '../config.js';
+import type { BoardDescriptor } from '../descriptor/types.js';
 import { defineSkill } from './types.js';
+
+// Wall-clock cap for a capture job (Story 6.5 owns the authoritative value/config).
+const CAPTURE_TIMEOUT_MS = 60_000;
 
 // Story 3.4 — add-item: create a PENDING item under a board. v1 scope is exactly
 // "create the pending item, full stop". It deliberately does NOT enqueue a
@@ -36,8 +42,27 @@ export const addItemSkill = defineSkill(
       status: 'pending',
     });
 
-    // Epic 6 seam: enqueue a capture/enrichment job for this pending item here,
-    // once the single-writer job worker (5.1) and a CaptureAdapter (Epic 6) exist.
+    // Story 6.1: enqueue a capture job (hop 1) on the single worker — but ONLY when
+    // an adapter is registered for the board's ingest_mode (so this is a no-op until
+    // 6.2–6.4 register adapters, and manual-upload boards wait for an upload, 6.4).
+    // Fire-and-forget: add-item returns the pending item fast (optimistic save).
+    const ingestMode = (board.descriptor as BoardDescriptor | undefined)?.ingest_mode;
+    if (ingestMode && ingestMode !== 'manual-upload' && input.source && captureRegistry.has(ingestMode)) {
+      const source = input.source;
+      void runItemJob(ctx.db, {
+        itemId,
+        type: 'capture',
+        timeoutMs: CAPTURE_TIMEOUT_MS,
+        work: (signal) =>
+          runCaptureForItem(ctx.db, captureRegistry, {
+            itemId,
+            boardId: input.boardId,
+            source,
+            signal,
+            screenshotsDir: config.screenshotsDir,
+          }),
+      });
+    }
 
     return { itemId, status: 'pending' };
   },

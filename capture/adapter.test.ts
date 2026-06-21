@@ -1,0 +1,90 @@
+import { describe, it, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { eq } from 'drizzle-orm';
+
+import { initDb } from '../db/index.js';
+import { boards, assets, items } from '../db/schema.js';
+import {
+  createCaptureRegistry,
+  dispatchCapture,
+  runCaptureForItem,
+  type CaptureAdapter,
+} from './adapter.js';
+
+const testAdapter: CaptureAdapter = {
+  ingestMode: 'test',
+  fetch: async (source) => ({
+    fields: { captured: typeof source === 'string' ? source : 'upload' },
+    assets: [{ kind: 'shot', path: '/data/screenshots/x.png' }],
+  }),
+};
+
+const manualAdapter: CaptureAdapter = {
+  ingestMode: 'manual',
+  fetch: async (source) => ({
+    fields: {},
+    assets: [{ kind: 'image', path: typeof source === 'string' ? source : '/uploaded.png' }],
+  }),
+};
+
+describe('capture dispatch (Story 6.1)', () => {
+  // AC 1 — dispatcher resolves the adapter by ingest_mode and returns {fields, assets}
+  it('dispatches to the adapter matching the ingest_mode', async () => {
+    const reg = createCaptureRegistry();
+    reg.register(testAdapter);
+    const out = await dispatchCapture(reg, 'test', 'https://x.example', { itemId: 'i', boardId: 'b' });
+    assert.deepEqual(out.fields, { captured: 'https://x.example' });
+    assert.equal(out.assets.length, 1);
+    assert.equal(out.assets[0].kind, 'shot');
+  });
+
+  // AC 1 — unknown ingest_mode → clear error
+  it('throws a clear error for an unknown ingest_mode', async () => {
+    const reg = createCaptureRegistry();
+    await assert.rejects(() => dispatchCapture(reg, 'nope', 's', { itemId: 'i', boardId: 'b' }), /ingest_mode|adapter/i);
+  });
+
+  // AC 2 — a non-URL (manual upload) source works (item isn't URL-bound)
+  it('supports a non-URL upload source', async () => {
+    const reg = createCaptureRegistry();
+    reg.register(manualAdapter);
+    const out = await dispatchCapture(reg, 'manual', { buffer: Buffer.from('img') }, { itemId: 'i', boardId: 'b' });
+    assert.equal(out.assets[0].kind, 'image');
+  });
+});
+
+describe('runCaptureForItem idempotency (Story 6.1)', () => {
+  let dir: string;
+  let handle: ReturnType<typeof initDb>;
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'board-oss-capture-'));
+    handle = initDb(join(dir, 'c.db'));
+    handle.db.insert(boards).values({ id: 'tb', name: 'T', view: 'grid', descriptor: { fields: [], enrichment_prompt: '', view: 'grid', ingest_mode: 'test' } }).run();
+    handle.db.insert(items).values({ id: 'it', boardId: 'tb', source: 'https://x.example' }).run();
+  });
+  after(() => {
+    handle.sqlite.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // AC 3/5 — re-capturing the same item id replaces, does not duplicate the asset
+  it('does not duplicate the asset on re-capture (idempotent by item id)', async () => {
+    const reg = createCaptureRegistry();
+    reg.register(testAdapter);
+
+    await runCaptureForItem(handle, reg, { itemId: 'it', boardId: 'tb', source: 'https://x.example' });
+    await runCaptureForItem(handle, reg, { itemId: 'it', boardId: 'tb', source: 'https://x.example' });
+
+    const assetRows = handle.db.select().from(assets).where(eq(assets.itemId, 'it')).all();
+    assert.equal(assetRows.length, 1, 'asset must not be duplicated on re-capture');
+    const itemRow = handle.db.select().from(items).where(eq(items.id, 'it')).get();
+    assert.equal((itemRow?.fields as { captured?: string }).captured, 'https://x.example', 'fields merged from capture');
+    // still exactly one item
+    assert.equal(handle.db.select().from(items).all().length, 1);
+  });
+});

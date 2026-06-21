@@ -1,6 +1,6 @@
 # Story 6.1: CaptureAdapter interface + ingest dispatch
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -33,21 +33,21 @@ so that the item model is source-agnostic and new adapters slot in later.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing dispatch tests first (TDD)** (AC: 1, 2, 4)
-  - [ ] Create `capture/adapter.test.ts`: register a fake adapter for `ingest_mode="test"`; dispatch a capture; assert it ran + returned `{fields, assets}`; assert unknown `ingest_mode` → clear error; assert a manual-upload-style adapter works with no URL source.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Define the `CaptureAdapter` interface + `AssetSpec`** (AC: 1, 2)
-  - [ ] Create `capture/adapter.ts`: `interface CaptureAdapter { fetch(source: string | UploadSource, ctx): Promise<{ fields: Record<string, unknown>; assets: AssetSpec[] }> }` and `AssetSpec` (`{ kind, path|buffer, width?, height?, hash? }`). Model `source` so non-URL adapters (manual upload) fit — a union or an adapter-specific source type, documented.
-  - [ ] Generalize from the prototype's `Processor.capture` (`processors.ts:3-18`, the de-facto adapter) — the new `CaptureAdapter` is the capture half, decoupled from analysis (which is now the `LLMProvider`/enrichment seam).
-- [ ] **Task 3 — Implement the ingest dispatcher** (AC: 1, 3)
-  - [ ] A registry/dispatch keyed by `ingest_mode` (`url-screenshot`, `url-readable`, `manual-upload`) → the matching `CaptureAdapter`. Resolve the board's `ingest_mode` from its descriptor (Story 1.2). Unknown mode → clear error. Mirror the prototype's `getProcessor` dispatch (`processors.ts:26-30`) but keyed by ingest_mode, not collection type.
-- [ ] **Task 4 — Implement idempotency (v1) + DOCUMENT the sidecar token contract (design-only)** (AC: 3, 4)
-  - [ ] **Idempotency (real v1 code, tested):** re-capture for an existing item id replaces/updates the asset rather than appending a duplicate — key on item id (ties to Story 1.5 dedupe + Story 7.3 refetch). This is the testable half (AC 3/AC 5).
-  - [ ] **Token-authed sidecar contract (design artifact ONLY):** write the would-be sidecar's endpoint shape + payload schema + token mechanism into the Dev Notes / a design doc, with a named in-process attach point — but do NOT wire token-auth into the in-process call (there's no network surface to guard in v1; AD4/C2 is "designed, not extracted"). Do not claim to "implement" token-auth on a function call.
-- [ ] **Task 5 — Wire `add-item` to enqueue a capture job (the hop-1 seam Story 3.4 deferred to Epic 6)** (AC: 1)
-  - [ ] Story 3.4's `add-item` creates a `status=pending` item and explicitly leaves the capture enqueue to Epic 6 — **this story owns wiring it.** After `add-item` creates the pending item, enqueue a capture job (on the Story 5.1 worker) that resolves the board's `ingest_mode` → adapter (this dispatcher) and runs it. On capture completion, Story 7.1 enqueues enrichment (hop 2). Without this task, a pending item never starts capturing — the chain dead-ends. (manual-upload boards skip auto-capture — the item waits for an upload, Story 6.4.)
-- [ ] **Task 6 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing dispatch tests first (TDD)** (AC: 1, 2, 4)
+  - [x] Create `capture/adapter.test.ts`: register a fake adapter for `ingest_mode="test"`; dispatch a capture; assert it ran + returned `{fields, assets}`; assert unknown `ingest_mode` → clear error; assert a manual-upload-style adapter works with no URL source.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Define the `CaptureAdapter` interface + `AssetSpec`** (AC: 1, 2)
+  - [x] Create `capture/adapter.ts`: `interface CaptureAdapter { fetch(source: string | UploadSource, ctx): Promise<{ fields: Record<string, unknown>; assets: AssetSpec[] }> }` and `AssetSpec` (`{ kind, path|buffer, width?, height?, hash? }`). Model `source` so non-URL adapters (manual upload) fit — a union or an adapter-specific source type, documented.
+  - [x] Generalize from the prototype's `Processor.capture` (`processors.ts:3-18`, the de-facto adapter) — the new `CaptureAdapter` is the capture half, decoupled from analysis (which is now the `LLMProvider`/enrichment seam).
+- [x] **Task 3 — Implement the ingest dispatcher** (AC: 1, 3)
+  - [x] A registry/dispatch keyed by `ingest_mode` (`url-screenshot`, `url-readable`, `manual-upload`) → the matching `CaptureAdapter`. Resolve the board's `ingest_mode` from its descriptor (Story 1.2). Unknown mode → clear error. Mirror the prototype's `getProcessor` dispatch (`processors.ts:26-30`) but keyed by ingest_mode, not collection type.
+- [x] **Task 4 — Implement idempotency (v1) + DOCUMENT the sidecar token contract (design-only)** (AC: 3, 4)
+  - [x] **Idempotency (real v1 code, tested):** re-capture for an existing item id replaces/updates the asset rather than appending a duplicate — key on item id (ties to Story 1.5 dedupe + Story 7.3 refetch). This is the testable half (AC 3/AC 5).
+  - [x] **Token-authed sidecar contract (design artifact ONLY):** write the would-be sidecar's endpoint shape + payload schema + token mechanism into the Dev Notes / a design doc, with a named in-process attach point — but do NOT wire token-auth into the in-process call (there's no network surface to guard in v1; AD4/C2 is "designed, not extracted"). Do not claim to "implement" token-auth on a function call.
+- [x] **Task 5 — Wire `add-item` to enqueue a capture job (the hop-1 seam Story 3.4 deferred to Epic 6)** (AC: 1)
+  - [x] Story 3.4's `add-item` creates a `status=pending` item and explicitly leaves the capture enqueue to Epic 6 — **this story owns wiring it.** After `add-item` creates the pending item, enqueue a capture job (on the Story 5.1 worker) that resolves the board's `ingest_mode` → adapter (this dispatcher) and runs it. On capture completion, Story 7.1 enqueues enrichment (hop 2). Without this task, a pending item never starts capturing — the chain dead-ends. (manual-upload boards skip auto-capture — the item waits for an upload, Story 6.4.)
+- [x] **Task 6 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -99,10 +99,29 @@ interface CaptureAdapter { fetch(source: string, ctx): Promise<{ fields: Record<
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 226 pass / 0 fail (222 prior + 4 new capture tests). No `./data` pollution; add-item stays pending (registry empty in 6.1).
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`CaptureAdapter` contract (AC1/AC2):** `{ ingestMode, fetch(source, ctx): Promise<{fields, assets[]}> }`. `CaptureSource = string | { buffer, filename?, mimeType? }` so non-URL (manual upload) sources fit — the item is `{fields, assets}`, not URL-bound. `AssetSpec = { kind, path?, buffer?, width?, height?, hash? }`.
+- **Dispatch (AC1):** `createCaptureRegistry()` keyed by `ingest_mode` (dup-guarded) + `captureRegistry` singleton; `dispatchCapture(reg, mode, source, ctx)` (async — unknown mode → clear rejected error). `registerAllCaptureAdapters` is the boot seam (empty now; 6.2–6.4 populate).
+- **Idempotency (AC3/AC5):** `runCaptureForItem` resolves the board's `ingest_mode` → adapter → persists via `writeItem`, which REPLACES the item's assets (Story 1.5), so re-capture for the same item id yields no duplicate asset/item. Captured `fields` merged over existing. Tested with two captures → one asset.
+- **add-item capture wiring (AC1/Task5):** after creating the pending item, `add-item` enqueues a capture job (`runItemJob` on the 5.1 worker, fire-and-forget) **only when an adapter is registered** for the board's ingest_mode and it's not `manual-upload`. In 6.1 the registry is empty → no enqueue → add-item behavior unchanged; auto-activates as 6.2–6.4 register adapters. (manual-upload boards wait for an upload — 6.4.)
+- **Sidecar token contract (AC4) — DESIGN ONLY:** documented in `capture/adapter.ts` (endpoint `POST {SIDECAR_URL}/capture`, `Authorization: Bearer <CAPTURE_TOKEN>`, payload `{ingestMode,source,itemId,boardId,idempotencyKey}`, idempotent-on-retry) with the named in-process attach point (`runCaptureForItem`). NOT wired — no network surface to auth in v1 (AD4/C2 "designed, not extracted").
+
 ### File List
+
+- `capture/adapter.ts` (new) — `CaptureAdapter`/`AssetSpec`/`CaptureSource`/`CaptureCtx`, `createCaptureRegistry`/`captureRegistry`/`registerAllCaptureAdapters`, `dispatchCapture`, `runCaptureForItem`; sidecar design doc.
+- `capture/adapter.test.ts` (new) — 4 tests (dispatch, unknown-mode error, non-URL source, re-capture idempotency).
+- `skills/add-item.ts` (modified) — enqueue a capture job when an adapter is registered.
+- `server.ts` (modified) — `registerAllCaptureAdapters(captureRegistry)` at boot.
+- `package.json` (modified) — appended `capture/adapter.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 6.1 implemented: CaptureAdapter interface + ingest_mode dispatch + idempotent runCaptureForItem; add-item enqueues capture when an adapter exists; sidecar token contract designed (not wired). Status → review.
