@@ -1,6 +1,6 @@
 # Story 3.1: Skill interface + registry + ctx injection
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,20 +36,20 @@ so that capabilities are uniform, testable, and globals-free.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing skill + registry test first (TDD)** (AC: 1, 2, 3, 4, 6)
-  - [ ] Create `skills/registry.test.ts`: define a fake skill via `defineSkill` whose `run` **calls a ctx collaborator** (e.g. `ctx.logger.info`); register it in a **fresh registry**; resolve by name; run with a mock ctx carrying spies; assert the spy received the call (AC 6 positive injection proof) and the output. Assert `getSkill("nope") === undefined` (AC 3).
-  - [ ] Run; confirm red (no registry/Skill types/`defineSkill`).
-- [ ] **Task 2 — Define `Skill`/`Ctx` types + the `defineSkill` helper + the `LLMProvider` interface** (AC: 1, 2, 5)
-  - [ ] Create `skills/types.ts`: the `Ctx` type `{ db, llm, queue, logger, boardId? }` (use `boardId`, not `collectionId`); the `Skill<I,O>` interface; and **`defineSkill(name, inputSchema, outputSchema, run)`** that infers `I = z.infer<typeof inputSchema>` / `O = z.infer<typeof outputSchema>` so skills never hand-write the generics (the ergonomic path — avoids `ZodType<I>` variance pain).
-  - [ ] **Declare the real `LLMProvider` interface here** (`complete<T>(prompt: string, schema: ZodType<T>): Promise<T>`, architecture §4.2) — interface only, zero impl. Epic 4 implements it. Do NOT write a throwaway "placeholder"; this is the canonical type Epic 4 depends on.
-  - [ ] Provide `disabledLlm` (a `LLMProvider` whose `complete` **throws `EnrichmentDisabledError`** — declare that error class here too) so `ctx.llm` is never `null` (AC 5). Do NOT leave it as "throws OR returns a sentinel" — pin the throw, because Epic 7's worker catches exactly that error to degrade gracefully; a sentinel-return would break that contract. Type `db` (Epic 1), `queue` (Story 1.3) against the real collaborators; `logger` is a minimal interface (prototype uses `console`; no logging lib).
-- [ ] **Task 3 — Implement the registry (undefined-on-miss, injectable)** (AC: 3, 4)
-  - [ ] Create `skills/registry.ts`: a `createRegistry()` factory returning `{ register(skill), get(name): Skill | undefined, list() }`. `get` returns `undefined` on miss (NOT throw). `register` MAY throw on a duplicate name (registration-time guard — the prototype lacks this, `processors.ts:22-24`).
-  - [ ] Make the registry an **injectable parameter of `buildServer({ registry })`** (Story 3.2 wires it) — not a module-global. A `registerAllSkills(registry)` boot function populates a given registry. Tests build a fresh registry per `inject()`.
-- [ ] **Task 4 — Build the `ctx` factory** (AC: 2, 5)
-  - [ ] A `buildCtx({ db, llm = disabledLlm, queue, logger, boardId? })` that assembles a `ctx`. The server (Story 3.2) builds the real ctx (with `config`-selected provider or `disabledLlm`); tests build a mock ctx with spies. No skill constructs its own db/llm/queue.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add `skills/registry.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing skill + registry test first (TDD)** (AC: 1, 2, 3, 4, 6)
+  - [x] Create `skills/registry.test.ts`: define a fake skill via `defineSkill` whose `run` **calls a ctx collaborator** (e.g. `ctx.logger.info`); register it in a **fresh registry**; resolve by name; run with a mock ctx carrying spies; assert the spy received the call (AC 6 positive injection proof) and the output. Assert `getSkill("nope") === undefined` (AC 3).
+  - [x] Run; confirm red (no registry/Skill types/`defineSkill`).
+- [x] **Task 2 — Define `Skill`/`Ctx` types + the `defineSkill` helper + the `LLMProvider` interface** (AC: 1, 2, 5)
+  - [x] Create `skills/types.ts`: the `Ctx` type `{ db, llm, queue, logger, boardId? }` (use `boardId`, not `collectionId`); the `Skill<I,O>` interface; and **`defineSkill(name, inputSchema, outputSchema, run)`** that infers `I = z.infer<typeof inputSchema>` / `O = z.infer<typeof outputSchema>` so skills never hand-write the generics (the ergonomic path — avoids `ZodType<I>` variance pain).
+  - [x] **Declare the real `LLMProvider` interface here** (`complete<T>(prompt: string, schema: ZodType<T>): Promise<T>`, architecture §4.2) — interface only, zero impl. Epic 4 implements it. Do NOT write a throwaway "placeholder"; this is the canonical type Epic 4 depends on.
+  - [x] Provide `disabledLlm` (a `LLMProvider` whose `complete` **throws `EnrichmentDisabledError`** — declare that error class here too) so `ctx.llm` is never `null` (AC 5). Do NOT leave it as "throws OR returns a sentinel" — pin the throw, because Epic 7's worker catches exactly that error to degrade gracefully; a sentinel-return would break that contract. Type `db` (Epic 1), `queue` (Story 1.3) against the real collaborators; `logger` is a minimal interface (prototype uses `console`; no logging lib).
+- [x] **Task 3 — Implement the registry (undefined-on-miss, injectable)** (AC: 3, 4)
+  - [x] Create `skills/registry.ts`: a `createRegistry()` factory returning `{ register(skill), get(name): Skill | undefined, list() }`. `get` returns `undefined` on miss (NOT throw). `register` MAY throw on a duplicate name (registration-time guard — the prototype lacks this, `processors.ts:22-24`).
+  - [x] Make the registry an **injectable parameter of `buildServer({ registry })`** (Story 3.2 wires it) — not a module-global. A `registerAllSkills(registry)` boot function populates a given registry. Tests build a fresh registry per `inject()`.
+- [x] **Task 4 — Build the `ctx` factory** (AC: 2, 5)
+  - [x] A `buildCtx({ db, llm = disabledLlm, queue, logger, boardId? })` that assembles a `ctx`. The server (Story 3.2) builds the real ctx (with `config`-selected provider or `disabledLlm`); tests build a mock ctx with spies. No skill constructs its own db/llm/queue.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add `skills/registry.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -108,10 +108,28 @@ interface Skill<I, O> {
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 156 pass / 0 fail (149 prior + 7 new skill-registry tests).
+
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied.
+- **`defineSkill(name, inputSchema, outputSchema, run)`** infers I/O from the zod schemas (`z.infer<typeof inputSchema>`) — authors never hand-write `Skill<I,O>` generics.
+- **`Ctx`** = `{ db, llm, queue, logger, boardId? }` (named `boardId`, not `collectionId`, to match §5). `run` reaches nothing global — all collaborators arrive via ctx. AC6 proven positively: the fake skill's `run` actually calls `ctx.logger.info` + `ctx.queue.enqueueWrite` and the test asserts the spies received the calls (not a passthrough echo). Global-freedom is structural: the test imports no real db/llm/queue singleton.
+- **`createRegistry()`** factory (not a module-global): `register` (throws on duplicate name — the processors.ts footgun), `get` (returns `undefined` on miss, NOT throw — so Story 3.2's 404 works), `list`. `registerAllSkills(registry)` is the explicit boot-registration seam (empty now; 3.3/3.4/Epic 10 add skills) — chosen over import side-effects.
+- **`LLMProvider` interface declared here** (canonical, `complete<T>(prompt, schema): Promise<T>`, architecture §4.2) — interface only; Epic 4 implements transports against it. **`disabledLlm`** is a throwing sentinel implementing the interface whose `complete` always throws the typed **`EnrichmentDisabledError`** (also declared here) — so `ctx.llm` is never null and callers degrade gracefully (Epic 7 / 8.5 own catch-and-degrade). `buildCtx` defaults `llm` to `disabledLlm`.
+- **Registry not yet wired into `buildServer`** — that's Story 3.2 (the `buildServer({registry})` param). `processors.ts`/`Processor` left intact (coexist until Epics 6/7 migrate).
+
 ### File List
+
+- `skills/types.ts` (new) — `Skill`/`Ctx`/`Logger`/`JobQueue` types, `LLMProvider` interface, `EnrichmentDisabledError` + `disabledLlm`, `defineSkill`, `buildCtx`.
+- `skills/registry.ts` (new) — `createRegistry()` factory (dup-guard, undefined-on-miss) + `registerAllSkills` boot seam.
+- `skills/registry.test.ts` (new) — 7 tests (defineSkill inference, positive ctx injection, fresh registry, undefined-on-miss, dup-throw, disabledLlm throws, buildCtx default).
+- `package.json` (modified) — appended `skills/registry.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 3.1 implemented: Skill contract + defineSkill, injectable createRegistry (undefined-on-miss, dup-guard), Ctx + buildCtx, canonical LLMProvider interface + disabledLlm throwing sentinel. Status → review.
