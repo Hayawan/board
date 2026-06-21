@@ -1,0 +1,109 @@
+import { inspect } from 'node:util';
+
+// Story 2.1 — the single env-driven config loader. Every deployment knob is read
+// here from an INJECTED env (pure, testable); Stories 2.2/2.3/2.4 migrate their
+// specific consumers to read from this surface, and the `// Story 2.1/2.2` markers
+// left in Epic 1 resolve here.
+//
+// Scope: this owns DEPLOYMENT config (PORT, HOST, DATA_DIR, CHROME_PATH, provider).
+// It deliberately does NOT own the prototype's subprocess-IPC run-flags
+// (BOARD_COLLECTION/BOARD_UPDATE_ID/BOARD_INSTRUCTIONS/BOARD_RESULT_FILE/
+// BOARD_ALLOW_EMPTY_CAPTURE) — those are per-invocation IPC, not configuration.
+
+export interface ProviderConfig {
+  /** CLI agent id for CliProvider (claude/codex/…). Epic 4 consumes. */
+  agent: string | null;
+  /** Model name (HttpProvider or CLI). */
+  model: string | null;
+  /** OpenAI-compatible base URL for HttpProvider. */
+  baseUrl: string | null;
+  /** API key (secret — redacted in every serialization surface, AC 5). */
+  apiKey: string | null;
+}
+
+export interface Config {
+  port: number;
+  host: string;
+  dataDir: string;
+  chromePath: string | null;
+  provider: ProviderConfig;
+  /** false = no-AI (enrichment disabled) — the NFR-4 graceful default. */
+  providerEnabled: boolean;
+}
+
+const REDACTED = '[REDACTED]';
+
+/** Empty/whitespace → undefined, so `HOST=""`/`PORT=""` take the default (AC 1). */
+function clean(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parsePort(value: string | undefined, fallback: number): number {
+  const raw = clean(value);
+  if (raw === undefined) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid config: PORT must be a positive integer, got "${value}"`);
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new Error(`Invalid config: PORT must be between 1 and 65535, got "${value}"`);
+  }
+  return n;
+}
+
+/**
+ * Pure config resolution from an INJECTED env. The app-facing singleton passes
+ * `process.env` explicitly; tests pass a plain object. Throws a clear, key-naming
+ * error on a malformed value rather than producing NaN / silently defaulting.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv): Config {
+  const provider: ProviderConfig = {
+    // LLM_* are the canonical names; the prototype's BOARD_* are accepted as aliases
+    // so the existing CLI path keeps working. Canonical wins over legacy.
+    agent: clean(env.LLM_AGENT) ?? clean(env.BOARD_ANALYSIS_AGENT) ?? null,
+    model:
+      clean(env.LLM_MODEL) ?? clean(env.BOARD_CLAUDE_MODEL) ?? clean(env.BOARD_CODEX_MODEL) ?? null,
+    baseUrl: clean(env.LLM_BASE_URL) ?? null,
+    apiKey: clean(env.LLM_API_KEY) ?? null,
+  };
+
+  const config: Config = {
+    port: parsePort(env.PORT, 3141),
+    host: clean(env.HOST) ?? '127.0.0.1',
+    dataDir: clean(env.DATA_DIR) ?? './data',
+    chromePath: clean(env.CHROME_PATH) ?? null,
+    provider,
+    // Enabled when a transport is configured (agent OR base-URL/key). A model name
+    // alone does not enable AI.
+    providerEnabled: provider.agent !== null || provider.baseUrl !== null || provider.apiKey !== null,
+  };
+
+  attachRedaction(config);
+  return config;
+}
+
+/** A copy with the secret masked — used by every log/serialize surface (AC 5). */
+function redact(config: Config): Omit<Config, 'provider'> & { provider: ProviderConfig } {
+  return {
+    ...config,
+    provider: { ...config.provider, apiKey: config.provider.apiKey ? REDACTED : null },
+  };
+}
+
+function attachRedaction(config: Config): void {
+  const surface = (): unknown => redact(config);
+  Object.defineProperty(config, 'toJSON', { value: surface, enumerable: false });
+  Object.defineProperty(config, 'toString', {
+    value: () => JSON.stringify(redact(config)),
+    enumerable: false,
+  });
+  Object.defineProperty(config, inspect.custom, {
+    value: () => redact(config),
+    enumerable: false,
+  });
+}
+
+/** Resolved singleton for app code (reads the real process.env explicitly). */
+export const config: Config = loadConfig(process.env);

@@ -1,6 +1,6 @@
 # Story 2.1: Env-driven config loader
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,17 +36,17 @@ so that I configure board-oss without editing source.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing config test first (TDD)** (AC: 1, 2, 3, 4, 5, 6)
-  - [ ] Create `config.test.ts`: `loadConfig({})` → assert every default; `loadConfig({ PORT: "8080", HOST: "0.0.0.0", DATA_DIR: "/tmp/x", ... })` → assert overrides; `loadConfig({ HOST: "" })` → assert HOST falls back to `127.0.0.1` (AC 1, security); `loadConfig({ PORT: "abc" })` → assert it throws a named error (AC 4); assert the resolved config's log/serialized form redacts the provider key (AC 5). Cover provider unset → no-AI.
-  - [ ] Run; confirm red (no `config.ts`).
-- [ ] **Task 2 — Implement `config.ts` with an injectable env** (AC: 1, 2, 3, 4, 5)
-  - [ ] `export function loadConfig(env: NodeJS.ProcessEnv): Config` — pure resolution from the injected env (do NOT default the param to the global `process.env` inside the loader; the app-facing singleton passes `process.env` explicitly). Export a resolved singleton `config` for app code, keep `loadConfig(env)` the testable core.
-  - [ ] Resolve/type every knob: `PORT` (number, default 3141), `HOST` (default `127.0.0.1`), `DATA_DIR` (default — Story 2.2 roots the paths), `CHROME_PATH` (optional — Story 2.3 autodetects when unset), provider config (agent/base-URL/key/model). **Coerce empty/whitespace string to "unset"** so `HOST=""`/`PORT=""` take the default (AC 1). Validate/parse (zod or hand-rolled); throw a clear named error on a malformed value (AC 4).
-  - [ ] Redact the provider key in any `toString`/log/JSON surface of the config object (AC 5).
-- [ ] **Task 3 — Document the config surface** (AC: 1, 2)
-  - [ ] Add a config table to the README / `.env.example` listing every var, its default, and meaning. (Epic 11 packaging references this.)
-- [ ] **Task 4 — Wire tests + verify green** (AC: 4)
-  - [ ] Add `config.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected. (Do NOT yet retrofit all `process.env` call sites — Stories 2.2–2.4 migrate their specific knobs; this story establishes the loader + its own tests.)
+- [x] **Task 1 — Write the failing config test first (TDD)** (AC: 1, 2, 3, 4, 5, 6)
+  - [x] Create `config.test.ts`: `loadConfig({})` → assert every default; `loadConfig({ PORT: "8080", HOST: "0.0.0.0", DATA_DIR: "/tmp/x", ... })` → assert overrides; `loadConfig({ HOST: "" })` → assert HOST falls back to `127.0.0.1` (AC 1, security); `loadConfig({ PORT: "abc" })` → assert it throws a named error (AC 4); assert the resolved config's log/serialized form redacts the provider key (AC 5). Cover provider unset → no-AI.
+  - [x] Run; confirm red (no `config.ts`).
+- [x] **Task 2 — Implement `config.ts` with an injectable env** (AC: 1, 2, 3, 4, 5)
+  - [x] `export function loadConfig(env: NodeJS.ProcessEnv): Config` — pure resolution from the injected env (do NOT default the param to the global `process.env` inside the loader; the app-facing singleton passes `process.env` explicitly). Export a resolved singleton `config` for app code, keep `loadConfig(env)` the testable core.
+  - [x] Resolve/type every knob: `PORT` (number, default 3141), `HOST` (default `127.0.0.1`), `DATA_DIR` (default — Story 2.2 roots the paths), `CHROME_PATH` (optional — Story 2.3 autodetects when unset), provider config (agent/base-URL/key/model). **Coerce empty/whitespace string to "unset"** so `HOST=""`/`PORT=""` take the default (AC 1). Validate/parse (zod or hand-rolled); throw a clear named error on a malformed value (AC 4).
+  - [x] Redact the provider key in any `toString`/log/JSON surface of the config object (AC 5).
+- [x] **Task 3 — Document the config surface** (AC: 1, 2)
+  - [x] Add a config table to the README / `.env.example` listing every var, its default, and meaning. (Epic 11 packaging references this.)
+- [x] **Task 4 — Wire tests + verify green** (AC: 4)
+  - [x] Add `config.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected. (Do NOT yet retrofit all `process.env` call sites — Stories 2.2–2.4 migrate their specific knobs; this story establishes the loader + its own tests.)
 
 ## Dev Notes
 
@@ -97,10 +97,31 @@ so that I configure board-oss without editing source.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 137 pass / 0 fail (131 prior + 6 new config tests).
+
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied.
+- **`loadConfig(env)`** is pure/injectable — resolves entirely from the injected `env` (no internal `process.env` read); the app-facing `config` singleton passes `process.env` explicitly. Tests never mutate the real env.
+- **Empty/whitespace → unset (AC 1, the security trap):** a `clean()` helper trims and maps `""`/`"   "` to undefined, so `HOST=""` falls back to `127.0.0.1` (not Fastify's bind-all) and `PORT=""` → 3141.
+- **Malformed fails fast (AC 4):** `PORT=abc`/`-5`/`70000` throw a clear `Invalid config: PORT …` error (named key, no NaN, range-checked 1–65535).
+- **Secret redaction (AC 5):** non-enumerable `toJSON` / `toString` / `util.inspect.custom` all return a copy with `provider.apiKey` masked to `[REDACTED]`. `JSON.stringify`, `inspect`, and `String()` all omit the key; the real key stays programmatically reachable (`config.provider.apiKey`) for Epic 4.
+- **Provider surface:** `LLM_AGENT`/`LLM_MODEL`/`LLM_BASE_URL`/`LLM_API_KEY` are canonical; prototype `BOARD_ANALYSIS_AGENT`→agent and `BOARD_CLAUDE_MODEL`/`BOARD_CODEX_MODEL`→model are honored as **aliases** (canonical wins) so the CLI path keeps working. `providerEnabled=false` when no transport (agent/baseUrl/apiKey) is set — the NFR-4 no-AI default (a model name alone doesn't enable AI).
+- **Scope respected:** no consumer retrofit — `server.ts`/`browser.ts`/`db/index.ts` still read env directly; Stories 2.2 (DATA_DIR paths), 2.3 (CHROME_PATH), 2.4 (HOST bind) rewire them. Subprocess-IPC `BOARD_*` run-flags deliberately excluded from config.ts.
+- **Documented** in `.env.example` (every knob, default, meaning, legacy aliases); `.env`/`.env.local` git-ignored, example committed.
+
 ### File List
+
+- `config.ts` (new) — `loadConfig(env)` pure loader + `config` singleton; redacting serialization surfaces.
+- `config.test.ts` (new) — 6 tests: defaults, overrides, empty-string→default, malformed-throws, redaction, legacy aliases.
+- `.env.example` (new) — documented config surface.
+- `.gitignore` (modified) — ignore `.env`/`.env.local`.
+- `package.json` (modified) — appended `config.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 2.1 implemented: pure injectable env config loader (`config.ts`) with empty-string→default safety, fail-fast parsing, API-key redaction, and legacy provider-env aliases. Status → review.

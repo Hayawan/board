@@ -12,6 +12,10 @@ screenshots/
 bookmarks.json
 library.json
 
+# Local env (real secrets) — keep .env.example committed, ignore the rest.
+.env
+.env.local
+
 # SQLite data dir (Story 1.1+) — created/seeded on first run, never committed.
 data/
 *.db
