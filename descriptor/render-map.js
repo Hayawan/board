@@ -15,6 +15,14 @@ function escHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+// HTML-escaping is NOT enough for URL contexts: a `javascript:`/`data:`/`vbscript:`
+// scheme in href/src is XSS that escaping doesn't stop. Allow only http(s)/mailto
+// and site-relative paths; anything else is rendered as escaped text instead.
+function isSafeUrl(value) {
+  const s = String(value).trim();
+  return /^https?:\/\//i.test(s) || /^mailto:/i.test(s) || s.startsWith("/");
+}
+
 const renderText = (_f, v) => `<p class="field-text">${escHtml(v)}</p>`;
 
 /** The closed-set render map: field type → markup. Unknown types use the text fallback. */
@@ -23,13 +31,15 @@ export const renderMap = {
   number: (_f, v) => `<span class="field-number">${escHtml(v)}</span>`,
   date: (_f, v) => `<time class="field-date">${escHtml(v)}</time>`,
   url: (_f, v) =>
-    `<a class="field-url" href="${escHtml(v)}" target="_blank" rel="noopener noreferrer">${escHtml(v)}</a>`,
+    isSafeUrl(v)
+      ? `<a class="field-url" href="${escHtml(v)}" target="_blank" rel="noopener noreferrer">${escHtml(v)}</a>`
+      : `<span class="field-url">${escHtml(v)}</span>`, // unsafe scheme → render as text, not a link
   enum: (_f, v) => `<span class="field-badge badge">${escHtml(v)}</span>`,
   tags: (_f, v) => {
     const arr = Array.isArray(v) ? v : [v];
     return arr.map((t) => `<span class="field-tag chip">${escHtml(t)}</span>`).join("");
   },
-  image: (_f, v) => `<img class="field-image" src="${escHtml(v)}" alt="" loading="lazy">`,
+  image: (_f, v) => (isSafeUrl(v) ? `<img class="field-image" src="${escHtml(v)}" alt="" loading="lazy">` : ""),
 };
 
 /** Render one field's value to markup, degrading unknown types to a quiet text fallback. */

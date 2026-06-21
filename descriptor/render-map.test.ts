@@ -41,6 +41,20 @@ describe('render-map (Story 7.2)', () => {
     assert.doesNotMatch(url, /"onerror=/); // attribute-escaped
   });
 
+  // SECURITY — javascript:/data: URL schemes are neutralized (escaping alone doesn't)
+  it('does not render an <a href> for an unsafe URL scheme', () => {
+    const js = renderField(f('u', 'url'), 'javascript:alert(1)');
+    assert.doesNotMatch(js, /href=/, 'javascript: scheme must not become a link');
+    assert.match(js, /alert/); // still shown as escaped text
+    const data = renderField(f('u', 'url'), 'data:text/html,<script>1</script>');
+    assert.doesNotMatch(data, /href=/);
+    // safe schemes still link
+    assert.match(renderField(f('u', 'url'), 'https://ok.example'), /<a /);
+    assert.match(renderField(f('u', 'url'), '/relative/path'), /<a /);
+    // unsafe image src is dropped
+    assert.equal(renderField(f('i', 'image'), 'javascript:alert(1)'), '');
+  });
+
   // AC 4 — renderFields iterates the descriptor in order, only present values
   it('renders descriptor fields in order, skipping empty values', () => {
     const descriptor: BoardDescriptor = {
