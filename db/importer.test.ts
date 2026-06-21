@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { initDb } from './index.js';
 import { items, assets } from './schema.js';
 import { seed, INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID } from './seed.js';
-import { importFlatJson } from './importer.js';
+import { importFlatJson, importRecords } from './importer.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const inspirationPath = join(here, '__fixtures__', 'bookmarks.sample.json');
@@ -97,6 +97,22 @@ describe('flat-JSON importer (Story 1.5)', () => {
     const acmeAssets = handle.db.select().from(assets).where(eq(assets.itemId, 'acme-111')).all();
     assert.equal(acmeAssets.length, 1, 'no duplicate assets on second run');
     assert.equal(ftsCount('zqxwvdesign'), 1, 'FTS hit must stay exactly 1, not 2');
+  });
+});
+
+// Hardening — a record missing its id (the dedupe key) fails loud rather than
+// silently collapsing every id-less record onto "undefined".
+describe('importRecords id guard (Story 1.5)', () => {
+  it('throws on a record missing a required id', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'board-oss-import-id-'));
+    const handle = initDb(join(dir, 'g.db'));
+    seed(handle.db);
+    await assert.rejects(
+      importRecords({ handle, boardId: LIBRARY_BOARD_ID, records: [{ title: 'no id here' }] }),
+      /missing a required `id`/,
+    );
+    handle.sqlite.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

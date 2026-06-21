@@ -111,7 +111,13 @@ export async function importRecords({ handle, boardId, records }: ImportRecordsA
   const mapper = MAPPERS[boardId];
   if (!mapper) throw new Error(`No importer mapping registered for board "${boardId}"`);
   let written = 0;
-  for (const r of records) {
+  for (const [i, r] of records.entries()) {
+    // Fail loud on a missing id — it is the idempotency/dedupe key. Without this,
+    // id-less records would all collapse to the string "undefined" and overwrite
+    // each other (matters for Story 3.3's untrusted in-memory payloads).
+    if (r.id === undefined || r.id === null || String(r.id).length === 0) {
+      throw new Error(`Record at index ${i} for board "${boardId}" is missing a required \`id\``);
+    }
     const { item, assets: itemAssets } = mapper(r, boardId);
     await writeItem(handle, item, itemAssets);
     written += 1;
