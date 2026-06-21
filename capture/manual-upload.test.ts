@@ -67,6 +67,18 @@ describe('uploadAssetForItem (Story 6.4)', () => {
     assert.equal(row.length, 1, 'manual upload replaces the item asset, no duplicate');
   });
 
+  // SECURITY — a traversal itemId must not escape screenshotsDir (no write)
+  it('rejects a path-traversal itemId without escaping screenshotsDir', async () => {
+    handle.db.insert(items).values({ id: '../../evil', boardId: 'b', source: 'x' }).run();
+    const before = readdirSync(shotDir).length;
+    await assert.rejects(
+      () => uploadAssetForItem(handle, { itemId: '../../evil', dataUrl: PNG_DATA_URL, screenshotsDir: shotDir }),
+      /invalid item id/i,
+    );
+    assert.equal(readdirSync(shotDir).length, before, 'no file written for a traversal id');
+    assert.equal(existsSync(join(dir, 'evil.png')), false, 'must not escape screenshotsDir');
+  });
+
   // AC 2/3 — rejection writes nothing
   it('rejects a non-image upload and writes no file', async () => {
     const before = readdirSync(shotDir).length;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 import { eq } from 'drizzle-orm';
 
@@ -59,6 +59,13 @@ export async function uploadAssetForItem(
 
   const filename = `${args.itemId}.${ext}`;
   const abs = join(args.screenshotsDir, filename);
+  // SECURITY: `itemId` is untrusted (the importer preserves arbitrary record ids), so
+  // a crafted id like "../../etc/cron.d/foo" must not escape screenshotsDir. Assert
+  // containment BEFORE writing anything.
+  const dirRoot = resolve(args.screenshotsDir);
+  if (!resolve(abs).startsWith(dirRoot + sep)) {
+    throw new Error(`Invalid item id for upload path: "${args.itemId}"`);
+  }
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, buffer);
   const hash = createHash('sha256').update(buffer).digest('hex');
