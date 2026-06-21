@@ -1,6 +1,6 @@
 # Story 4.1: LLMProvider interface + conformance suite
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,16 +30,16 @@ so that any transport (HTTP, CLI, future) is provider-agnostic to the rest of th
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the conformance suite as a failing parameterized test (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `llm/conformance.ts` exporting `runProviderConformance({ makeProviderReturning })` where `makeProviderReturning(rawBackendOutput)` builds a provider whose backend emits that output. The suite seeds VALID output (assert parsed object) then SCHEMA-VIOLATING output (assert `instanceof LLMSchemaError`) — both in one run.
-  - [ ] Create `llm/provider.test.ts` that runs the suite against a `FakeProvider` seam. Run; confirm red.
-- [ ] **Task 2 — Import the canonical interface; define the typed errors here** (AC: 1, 3)
-  - [ ] **Do NOT redefine `LLMProvider`** — import it from `skills/types.ts` (Story 3.1 owns it; that's where `ctx.llm` is typed). `llm/provider.ts` re-exports it for cohesion but adds no second definition. (Note: architecture §6's comment "`llm/provider.ts` # LLMProvider interface + conformance suite" is STALE — 3.1 took the interface; §6 predates that. Don't treat §6 as instruction to define the interface here.)
-  - [ ] Define + export the named typed errors `LLMSchemaError` (schema mismatch) and `LLMTransportError` (backend unreachable/non-zero) so all providers throw consistent, `instanceof`-checkable errors. `EnrichmentDisabledError` is declared in Story 3.1 (with `disabledLlm`) — import it; do not redefine.
-- [ ] **Task 3 — Implement the `FakeProvider` seam** (AC: 2, 3)
-  - [ ] A `FakeProvider` whose backend emits a per-case `rawBackendOutput` (good or schema-violating) so the suite drives both paths without any real backend. This is the reference seam 4.2/4.3 mirror (fake fetch body / fake spawner output).
-- [ ] **Task 4 — Wire tests + verify green** (AC: 4)
-  - [ ] Add `llm/provider.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the conformance suite as a failing parameterized test (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `llm/conformance.ts` exporting `runProviderConformance({ makeProviderReturning })` where `makeProviderReturning(rawBackendOutput)` builds a provider whose backend emits that output. The suite seeds VALID output (assert parsed object) then SCHEMA-VIOLATING output (assert `instanceof LLMSchemaError`) — both in one run.
+  - [x] Create `llm/provider.test.ts` that runs the suite against a `FakeProvider` seam. Run; confirm red.
+- [x] **Task 2 — Import the canonical interface; define the typed errors here** (AC: 1, 3)
+  - [x] **Do NOT redefine `LLMProvider`** — import it from `skills/types.ts` (Story 3.1 owns it; that's where `ctx.llm` is typed). `llm/provider.ts` re-exports it for cohesion but adds no second definition. (Note: architecture §6's comment "`llm/provider.ts` # LLMProvider interface + conformance suite" is STALE — 3.1 took the interface; §6 predates that. Don't treat §6 as instruction to define the interface here.)
+  - [x] Define + export the named typed errors `LLMSchemaError` (schema mismatch) and `LLMTransportError` (backend unreachable/non-zero) so all providers throw consistent, `instanceof`-checkable errors. `EnrichmentDisabledError` is declared in Story 3.1 (with `disabledLlm`) — import it; do not redefine.
+- [x] **Task 3 — Implement the `FakeProvider` seam** (AC: 2, 3)
+  - [x] A `FakeProvider` whose backend emits a per-case `rawBackendOutput` (good or schema-violating) so the suite drives both paths without any real backend. This is the reference seam 4.2/4.3 mirror (fake fetch body / fake spawner output).
+- [x] **Task 4 — Wire tests + verify green** (AC: 4)
+  - [x] Add `llm/provider.test.ts` to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -87,10 +87,29 @@ interface LLMProvider { complete<T>(prompt: string, schema: ZodType<T>): Promise
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 176 pass / 0 fail (171 prior + 5 new conformance/error tests).
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied.
+- **`runProviderConformance({ label, makeProviderReturning })`** (`llm/conformance.ts`) is the ONE shared suite, parameterized by a per-case backend seam: `makeProviderReturning(rawModelOutput)` builds a provider whose backend emits that raw model-output string, so the suite drives BOTH valid→parsed and schema-violating→`LLMSchemaError` in a single run (a no-arg factory couldn't). 4.2/4.3 will mirror the seam by wrapping `raw` into a fake fetch body / fake spawner stdout.
+- **`LLMProvider` is NOT redefined** — `llm/provider.ts` re-exports it from `skills/types.ts` (Story 3.1 owns it) + re-exports `EnrichmentDisabledError`.
+- **Typed errors:** `LLMSchemaError` (malformed JSON or schema violation — the model's fault) and `LLMTransportError` (backend unreachable / non-success) are named, exported, `instanceof`-checkable, and distinct (asserted: a transport error is NOT a schema error). Distinguishing them lets 4.4/7.1/8.5 tell "bad output" from "backend down".
+- **`parseStructuredOutput(raw, schema)`** is the single reference parse-and-validate (JSON.parse → zod revalidate → typed `LLMSchemaError` on failure) that the FakeProvider and both real transports reuse — no leaked raw `ZodError`.
+- **`disabledLlm` excluded** from the suite by design (it throws `EnrichmentDisabledError`, can't return a schema-valid T).
+- Transports (HttpProvider 4.2, CliProvider 4.3) and graceful selection (4.4) are NOT built here — only the contract + fake.
+
 ### File List
+
+- `llm/provider.ts` (new) — re-exported `LLMProvider`/`EnrichmentDisabledError`, `LLMSchemaError`/`LLMTransportError`, `parseStructuredOutput`.
+- `llm/conformance.ts` (new) — `runProviderConformance` shared suite.
+- `llm/provider.test.ts` (new) — runs the suite against FakeProvider + typed-error/parse tests.
+- `package.json` (modified) — appended `llm/provider.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 4.1 implemented: shared LLM provider conformance suite + typed errors (LLMSchemaError/LLMTransportError) + parseStructuredOutput reference helper, run against a FakeProvider seam. Status → review.
