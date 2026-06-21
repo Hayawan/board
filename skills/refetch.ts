@@ -1,0 +1,26 @@
+import { z } from 'zod';
+
+import { captureRegistry } from '../capture/adapter.js';
+import { refetchItem } from '../enrichment/refetch.js';
+import { config } from '../config.js';
+import { defineSkill } from './types.js';
+
+// Story 7.3 — refetch an existing item: re-run capture + enrichment to refresh
+// analysis without losing user-authored fields (preservation is by construction in
+// the pipeline). Fire-and-forget — returns immediately with `processing`; live
+// progress streams over SSE. Also the "Retry analysis" path for a status=error item.
+export const refetchSkill = defineSkill(
+  'refetch',
+  z.object({ itemId: z.string().min(1) }),
+  z.object({ itemId: z.string(), status: z.string() }),
+  async (input, ctx) => {
+    // Don't await — capture (Chrome) + enrich (LLM) run on the worker.
+    void refetchItem(ctx.db, {
+      itemId: input.itemId,
+      registry: captureRegistry,
+      llm: ctx.llm,
+      screenshotsDir: config.screenshotsDir,
+    });
+    return { itemId: input.itemId, status: 'processing' };
+  },
+);
