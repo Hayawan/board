@@ -1,0 +1,42 @@
+{
+  "name": "Board",
+  "slug": "board",
+  "categories": [12],
+  "date_created": "2026-06-21",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 3141,
+  "documentation": "https://github.com/Hayawan/board/blob/main/README.md",
+  "website": "https://github.com/Hayawan/board",
+  "logo": "https://cdn.jsdelivr.net/gh/Hayawan/board@main/favicon.png",
+  "description": "Board is a self-hostable visual bookmark and inspiration board. Capture URLs into typed, per-board collections with screenshots, full-text search, and optional AI enrichment. Runs fully without AI by default; enable a local CLI or OpenAI-compatible provider via the .env.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/board.sh",
+      "config_path": "/opt/board/.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 8,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Board runs without AI by default. To enable enrichment, edit /opt/board/.env (set LLM_AGENT for a local CLI, or LLM_BASE_URL + LLM_MODEL + LLM_API_KEY for an OpenAI-compatible API) and run: systemctl restart board",
+      "type": "info"
+    },
+    {
+      "text": "URL capture uses headless Chromium (installed as a dependency). On Debian it is autodetected; no extra configuration is required.",
+      "type": "info"
+    }
+  ]
+}
