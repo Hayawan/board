@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { eq } from 'drizzle-orm';
+
 import { initDb } from './index.js';
 import { boards, items, assets } from './schema.js';
 
@@ -141,8 +143,7 @@ describe('db/schema (Story 1.1)', () => {
   });
 });
 
-// tiny local helper to avoid importing drizzle's eq at top before deps exist
-import { eq } from 'drizzle-orm';
+// small local helper to keep where-clauses terse
 function eqId(col: any, val: string) {
   return eq(col, val);
 }
