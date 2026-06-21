@@ -619,6 +619,17 @@
     }
     .coll-btn:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-hover); }
     .coll-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 500; }
+    /* Square icon buttons (edit ⚙ / new +) — equal padding, centered glyph, same height. */
+    .coll-btn.coll-edit, .coll-btn.coll-new {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      padding: 4px 0;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .coll-btn.coll-new { font-size: 17px; }
 
     /* ── Main Layout ── */
     main {
@@ -1071,9 +1082,12 @@
 
     .reflection-field .field-label { margin-bottom: 4px; }
 
-    textarea.reflection-input {
+    /* One field style across text inputs, selects, and textareas (board editor,
+       composer, item-modal editing) so every form control matches. */
+    .reflection-input {
       width: 100%;
-      background: var(--surface-2);
+      box-sizing: border-box;
+      background-color: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 8px 10px;
@@ -1081,13 +1095,24 @@
       font-size: 13px;
       font-family: inherit;
       line-height: 1.5;
-      resize: vertical;
-      min-height: 60px;
       outline: none;
       transition: border-color 0.15s;
     }
-    textarea.reflection-input:focus { border-color: var(--accent); }
-    textarea.reflection-input::placeholder { color: var(--text-3); }
+    textarea.reflection-input { resize: vertical; min-height: 60px; }
+    select.reflection-input {
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 28px;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    .reflection-input:hover { border-color: var(--border-hover); }
+    .reflection-input:focus { border-color: var(--accent); }
+    .reflection-input::placeholder { color: var(--text-3); }
+    .reflection-input[readonly] { color: var(--text-2); cursor: default; }
+    .reflection-input[readonly]:hover { border-color: var(--border); }
 
     .modal-footer {
       display: flex;
