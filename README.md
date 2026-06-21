@@ -51,7 +51,50 @@ reverse-proxy-only auth model, AD7). The security posture is:
 > warning at boot reminding you to put a reverse proxy / firewall in front.
 
 `oslo` + `argon2` (app-level auth) are reserved for a future v2; v1's auth story is
-the reverse proxy. Packaging (systemd / LXC / container) docs land in Epic 11.
+the reverse proxy.
+
+## Self-hosting on a Debian LXC (systemd)
+
+One command on a fresh Debian LXC (run as root, from the repo root):
+
+```bash
+sudo bash scripts/install-lxc.sh
+```
+
+It installs Node LTS + apt `chromium`, creates a non-root `boardoss` service user,
+installs the app to `/opt/board-oss` with a persistent `DATA_DIR` at
+`/var/lib/board-oss`, installs + starts the `board-oss` systemd unit
+(`deploy/board-oss.service`), and waits for `/healthz`. Tunables via env:
+`APP_DIR`, `DATA_DIR`, `PORT`, `APP_USER`.
+
+- **Run mode:** the service runs `node --import tsx server.ts` (no build step; `tsx`
+  + `typescript` are runtime deps, so `npm ci --omit=dev` keeps them).
+- **`better-sqlite3`** uses its prebuilt binary on glibc Linux / Node LTS (no
+  compiler needed). If a from-source build is ever required, `apt-get install -y
+  build-essential python3` (commented in the install script).
+- **Service management:** `systemctl status|restart board-oss`,
+  `journalctl -u board-oss -f`.
+
+### Health check
+
+`GET /healthz` → `200 {"ok":true}` — a **pure liveness probe with no DB check** (so
+it never flaps during a SQLite WAL checkpoint and trips a restart loop). Used by the
+systemd unit and the container healthcheck.
+
+### Reverse proxy (auth + TLS)
+
+The unit binds `127.0.0.1:8080`. To reach board-oss beyond the box, front it with a
+reverse proxy that provides auth + TLS — **Caddy + Authelia**, or a **Tailscale**
+tailnet. Don't expose the port directly; v1 has no app-level auth (see above).
+
+### Enabling AI (optional)
+
+board-oss runs fully with no AI (enrichment shows a dignified "disabled" state). To
+enable analysis, set the provider env on the unit (`Environment=LLM_BASE_URL=…
+LLM_API_KEY=… LLM_MODEL=…` or a CLI agent via `LLM_AGENT`) and `systemctl restart
+board-oss`.
+
+The container image lands in Story 11.2.
 
 ## Portability
 

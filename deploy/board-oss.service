@@ -1,0 +1,35 @@
+[Unit]
+Description=board-oss (self-hostable visual board)
+Documentation=https://github.com/your-org/board-oss
+After=network.target
+
+[Service]
+Type=simple
+User=boardoss
+Group=boardoss
+WorkingDirectory=/opt/board-oss
+
+# Story 11.1: production run mode = tsx at runtime (no build step). tsx + typescript
+# are runtime dependencies, so `npm ci --omit=dev` keeps them.
+ExecStart=/usr/bin/env node --import tsx server.ts
+
+# Epic 2 config seam. localhost-only bind (Story 2.4) — auth/TLS is the reverse proxy's
+# job. DATA_DIR (Story 2.2) is persistent + separate from the code dir, so upgrades /
+# `npm ci` never nuke data. CHROME_PATH is autodetected (Story 2.3) to apt chromium.
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+Environment=DATA_DIR=/var/lib/board-oss
+
+Restart=on-failure
+RestartSec=3
+
+# Hardening — runs as a dedicated non-root user (FR-23/NFR-3) with a minimal writable surface.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/board-oss
+
+[Install]
+WantedBy=multi-user.target

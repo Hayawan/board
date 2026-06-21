@@ -372,6 +372,12 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // off field-emptiness (an enabled box can legitimately return empty).
   app.get("/api/meta", async () => ({ providerConfigured: llm !== disabledLlm }));
 
+  // Story 11.1: PURE LIVENESS probe — a cheap 200 with NO DB check (a DB-reachable
+  // check would make it a readiness probe that flaps during a WAL checkpoint / long
+  // write → systemd restart loop). A DB-reachable check, if ever wanted, is a separate
+  // /readyz. Used by the systemd unit + the container healthcheck (Story 11.2).
+  app.get("/healthz", async () => ({ ok: true }));
+
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
 
   // --- Collections manifest ---

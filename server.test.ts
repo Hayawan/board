@@ -391,3 +391,12 @@ test("POST /skills/search returns board-scoped FTS hits", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Story 11.1: /healthz liveness ---
+
+test("GET /healthz is a pure 200 liveness probe (no DB, no pollution)", async () => {
+  const app = await buildServer(); // no opts.db → if /healthz touched the DB it would open ./data
+  const res = await app.inject({ method: "GET", url: "/healthz" });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { ok: true });
+});
