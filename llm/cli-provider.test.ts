@@ -76,6 +76,42 @@ describe('CliProvider (Story 4.3)', () => {
     await assert.rejects(() => provider.complete('p', schema), (e: unknown) => e instanceof LLMTransportError);
   });
 
+  // AC 3 — captured stderr is logged on a non-zero exit
+  it('logs captured stderr on a non-zero exit', async () => {
+    const logged: string[] = [];
+    const logger = { info: () => {}, warn: () => {}, error: (m: string) => logged.push(m) };
+    const f = fakeSpawn({ stderr: 'kaboom-detail', code: 2 });
+    const provider = new CliProvider({ agent: { id: 'claude', model: null }, spawn: f.spawn, timeoutMs: 1000, logger });
+    await assert.rejects(() => provider.complete('p', schema), (e: unknown) => e instanceof LLMTransportError);
+    assert.ok(logged.some((l) => l.includes('kaboom-detail')), 'stderr should be captured + logged');
+  });
+
+  // AC 5 — codex writes the STRICTER schema (additionalProperties:false, required=all)
+  it('codex writes the stricter output schema to the schema file', async () => {
+    let written = '';
+    const f = fakeSpawn({ code: 0 });
+    const provider = new CliProvider({
+      agent: { id: 'codex', model: null },
+      spawn: f.spawn,
+      readFile: () => '{"title":"c","n":1}',
+      writeFile: (_p, data) => { written = data; },
+      timeoutMs: 1000,
+    });
+    await provider.complete('p', schema);
+    const js = JSON.parse(written);
+    assert.equal(js.additionalProperties, false, 'codex schema must be strict');
+    assert.deepEqual(js.required, ['title', 'n']);
+  });
+
+  // Resource safety on the small LXC — output is bounded (prototype's maxBuffer)
+  it('kills + rejects when output exceeds the size cap', async () => {
+    const huge = 'x'.repeat(11 * 1024 * 1024);
+    const f = fakeSpawn({ stdout: huge, hang: true }); // emits a giant chunk, never closes
+    const provider = new CliProvider({ agent: { id: 'claude', model: null }, spawn: f.spawn, timeoutMs: 60_000 });
+    await assert.rejects(() => provider.complete('p', schema), (e: unknown) => e instanceof LLMTransportError);
+    assert.equal(f.killed(), true, 'overflowing process must be killed');
+  });
+
   // AC 3 — wall-clock timeout KILLS the process and throws
   it('kills the process and throws on timeout', async () => {
     const f = fakeSpawn({ hang: true });

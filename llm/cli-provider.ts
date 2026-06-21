@@ -44,12 +44,17 @@ export interface CliProviderConfig {
   spawn?: SpawnFn;
   /** Injected for tests; reads the codex result file. Defaults to fs.readFileSync. */
   readFile?: (path: string) => string;
+  /** Injected for tests; writes the codex schema file. Defaults to fs.writeFileSync. */
+  writeFile?: (path: string, data: string) => void;
   /** Wall-clock timeout (ms) before the child is killed. */
   timeoutMs?: number;
   logger?: Logger;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+// Bound captured output so a runaway agent can't exhaust memory on the small LXC
+// (mirrors the prototype's spawnSync maxBuffer, which the async port must preserve).
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 const DEFAULT_SYSTEM_PROMPT = 'Return ONLY a JSON object matching the provided schema. No prose, no code fences.';
 const noopLogger: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
@@ -87,8 +92,25 @@ function runProcess(
       reject(new LLMTransportError(`CLI agent "${command}" timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    child.stdout.on('data', (c) => (stdout += c.toString()));
-    child.stderr.on('data', (c) => (stderr += c.toString()));
+    const overflow = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      reject(new LLMTransportError(`CLI agent "${command}" exceeded ${MAX_OUTPUT_BYTES} bytes of output`));
+    };
+    child.stdout.on('data', (c) => {
+      stdout += c.toString();
+      if (stdout.length + stderr.length > MAX_OUTPUT_BYTES) overflow();
+    });
+    child.stderr.on('data', (c) => {
+      stderr += c.toString();
+      if (stdout.length + stderr.length > MAX_OUTPUT_BYTES) overflow();
+    });
     child.on('error', (err) => {
       if (settled) return;
       settled = true;
@@ -111,6 +133,7 @@ export class CliProvider implements LLMProvider {
     const { agent } = this.cfg;
     const spawnFn = this.cfg.spawn ?? defaultSpawn;
     const readFile = this.cfg.readFile ?? ((p: string) => readFileSync(p, 'utf-8'));
+    const writeFile = this.cfg.writeFile ?? ((p: string, data: string) => writeFileSync(p, data));
     const timeoutMs = this.cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const logger = this.cfg.logger ?? noopLogger;
     const systemPrompt = this.cfg.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
@@ -123,7 +146,7 @@ export class CliProvider implements LLMProvider {
     try {
       // codex needs a stricter schema (additionalProperties:false, all-required).
       const outputSchema = agent.id === 'codex' ? toCodexOutputSchema(jsonSchema) : jsonSchema;
-      writeFileSync(schemaFile, JSON.stringify(outputSchema));
+      writeFile(schemaFile, JSON.stringify(outputSchema));
 
       const { command, args } = buildAnalysisCommand(agent, prompt, jsonSchema as object, systemPrompt, {
         schemaFile,
