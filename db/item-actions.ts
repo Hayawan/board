@@ -47,7 +47,10 @@ export async function patchItemFields(
   }
 
   const fields = { ...((item.fields as Record<string, unknown>) ?? {}), ...fieldUpdates };
-  await writeItem(handle, { ...item, ...columnUpdates, fields });
+  // Bump updatedAt (seconds, matching the unixepoch() DB default) so a future
+  // "recently edited" sort sees curation edits.
+  const updatedAt = Math.floor(Date.now() / 1000);
+  await writeItem(handle, { ...item, ...columnUpdates, updatedAt, fields });
   return handle.db.select().from(items).where(eq(items.id, itemId)).get();
 }
 

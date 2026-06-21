@@ -304,13 +304,32 @@ test("PATCH /api/items/:id updates notes (SQLite-backed, injected db)", async ()
   try {
     handle.db.insert(boards).values({ id: "b", name: "B", view: "list", descriptor: { view: "list", ingest_mode: "url-readable", enrichment_prompt: "", fields: [] } }).run();
     handle.db.insert(items).values({ id: "it", boardId: "b", source: "x" }).run();
-    const app = await buildServer({ db: handle });
+    const { assets } = await import("./db/schema.js");
+    const shotDir = path.join(dir, "shots");
+    fs.mkdirSync(shotDir, { recursive: true });
+    const app = await buildServer({ db: handle, screenshotsDir: shotDir });
+
+    // notes PATCH
     const res = await app.inject({ method: "PATCH", url: "/api/items/it", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes: "hi" }) });
     assert.equal(res.statusCode, 200);
     assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get()?.notes, "hi");
+
+    // favorite toggle via route
+    await app.inject({ method: "PATCH", url: "/api/items/it", headers: { "content-type": "application/json" }, body: JSON.stringify({ favorite: true }) });
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get()?.favorite, 1);
+
+    // disallowed field via route — status unchanged
+    await app.inject({ method: "PATCH", url: "/api/items/it", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "done" }) });
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get()?.status, "pending");
+
+    // DELETE via route removes the item AND unlinks its asset file (non-grid board)
+    handle.db.insert(assets).values({ id: "it-a", itemId: "it", kind: "screenshot", path: "screenshots/it.png" }).run();
+    fs.writeFileSync(path.join(shotDir, "it.png"), "PNG");
     const del = await app.inject({ method: "DELETE", url: "/api/items/it" });
     assert.equal(del.statusCode, 204);
     assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get(), undefined);
+    assert.equal(fs.existsSync(path.join(shotDir, "it.png")), false, "asset file unlinked via route DELETE");
+
     const missing = await app.inject({ method: "PATCH", url: "/api/items/nope", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(missing.statusCode, 404);
   } finally {
