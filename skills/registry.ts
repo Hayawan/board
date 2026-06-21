@@ -5,6 +5,7 @@ import { tagSkill } from './tag.js';
 import { uploadAssetSkill } from './upload-asset.js';
 import { refetchSkill } from './refetch.js';
 import { searchSkill } from './search.js';
+import { composeBoardSkill } from './compose-board.js';
 import type { Skill } from './types.js';
 
 // Story 3.1 — the skill registry. A FACTORY (not a module-global Map) so each
@@ -55,5 +56,6 @@ export function registerAllSkills(registry: SkillRegistry): void {
   registry.register(uploadAssetSkill); // Story 6.4
   registry.register(refetchSkill); // Story 7.3
   registry.register(searchSkill); // Story 9.1
-  // Epic 10 (compose-board / generate-fields) adds here.
+  registry.register(composeBoardSkill); // Story 10.1
+  // Epic 10 (generate-fields) adds here.
 }
