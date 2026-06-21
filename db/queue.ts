@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { assets, boards, items, type NewAsset, type NewItem } from './schema.js';
 import { buildSearchBlob } from './search-blob.js';
+import { EnrichmentDisabledError } from '../skills/types.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from './index.js';
 
@@ -180,6 +181,105 @@ export function writeItem(handle: DbHandle, item: NewItem, itemAssets?: NewAsset
       for (const a of itemAssets) handle.db.insert(assets).values(a).run();
     }
   });
+}
+
+// --- Story 5.2: item status lifecycle (pending → processing → done | error) ---
+
+type ItemStatus = 'pending' | 'processing' | 'done' | 'error';
+
+/**
+ * Set an item's status directly (no enqueue). MUST be called only from inside a job
+ * that already holds the worker slot — otherwise use the queue. Synchronous
+ * better-sqlite3 write; immediately visible to subsequent reads on the connection.
+ */
+function setItemStatusDirect(handle: DbHandle, id: string, status: ItemStatus, errorReason: string | null): void {
+  handle.db
+    .update(items)
+    .set({ status, errorReason, updatedAt: sql`(unixepoch())` })
+    .where(eq(items.id, id))
+    .run();
+}
+
+/**
+ * Map a thrown error to a SHORT, user-safe `error_reason` — never a raw stack or
+ * secret-bearing string (NFR-3; rendered by Story 8.5). Classified by error name so
+ * the storage layer stays decoupled from llm/.
+ */
+export function cleanErrorReason(err: unknown): string {
+  const name = (err as { name?: string })?.name;
+  if (name === 'LLMTransportError') return 'could not reach the AI provider';
+  if (name === 'LLMSchemaError') return 'AI returned invalid output';
+  const msg = String((err as Error)?.message ?? '');
+  if (/timed out|timeout/i.test(msg)) return 'timed out';
+  return 'processing failed';
+}
+
+export interface RunItemJobArgs {
+  itemId: string;
+  type: string;
+  timeoutMs: number;
+  work: (signal: AbortSignal) => Promise<void> | void;
+  teardown?: (signal: AbortSignal) => Promise<void>;
+  timeoutFn?: TimeoutFn;
+}
+
+/**
+ * Run a unit of work for an item, driving its status lifecycle on the single worker:
+ * `processing` at start → `done` on success → `error` (+ clean reason) on a thrown
+ * failure. `EnrichmentDisabledError` is classified as `done` (NOT error) so a no-AI
+ * install shows dignified un-enriched cards, not error cards (Story 4.4 hand-off).
+ *
+ * The in-job `try/catch` lands a terminal status for throw/disabled while the slot
+ * is held. A 5.1 TIMEOUT abandons the (possibly hung) work — its terminal `error`
+ * status is written here, after the job result, so an item is never stuck
+ * `processing`. (A hard crash/OOM where neither runs is swept by
+ * `reconcileInterruptedItems` at boot.)
+ */
+export async function runItemJob(handle: DbHandle, args: RunItemJobArgs): Promise<JobResult> {
+  const job: Job = {
+    type: args.type,
+    timeoutMs: args.timeoutMs,
+    teardown: args.teardown,
+    run: async (signal) => {
+      setItemStatusDirect(handle, args.itemId, 'processing', null);
+      try {
+        await args.work(signal);
+        setItemStatusDirect(handle, args.itemId, 'done', null);
+      } catch (err) {
+        if (err instanceof EnrichmentDisabledError) {
+          setItemStatusDirect(handle, args.itemId, 'done', null); // disabled = done, not error
+        } else {
+          setItemStatusDirect(handle, args.itemId, 'error', cleanErrorReason(err));
+        }
+        // swallowed: the terminal status is recorded; the job itself "succeeded" at
+        // managing status. (Timeout is handled below — the run may be abandoned.)
+      }
+    },
+  };
+
+  const result = await enqueueJob(job, { timeoutFn: args.timeoutFn });
+
+  // Timeout: the work was abandoned (possibly still `processing`) — record the
+  // terminal error status through the writer so the item is never stuck.
+  if (result.timedOut) {
+    await enqueueWrite(() => setItemStatusDirect(handle, args.itemId, 'error', 'timed out'));
+  }
+  return result;
+}
+
+/**
+ * Boot reconciliation (Story 5.2 AC4): move any item left `processing` by a hard
+ * crash / OOM-kill (where the in-job `finally` never ran) to `error` with reason
+ * "interrupted". The ONLY mechanism that honors C4's "never stuck processing" for
+ * the crash case. Idempotent; indexed on `status`. Returns the number reconciled.
+ */
+export function reconcileInterruptedItems(handle: DbHandle): number {
+  const res = handle.db
+    .update(items)
+    .set({ status: 'error', errorReason: 'interrupted', updatedAt: sql`(unixepoch())` })
+    .where(eq(items.status, 'processing'))
+    .run();
+  return res.changes;
 }
 
 /**

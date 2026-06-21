@@ -15,7 +15,7 @@ import {
 } from "./storage.js";
 import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
-import { enqueueWrite } from "./db/queue.js";
+import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
@@ -464,6 +464,8 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 // Entrypoint guard — only listen when run directly
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ensureDataDir(); // Story 2.2: create DATA_DIR + screenshots on real boot (AC 2)
+  // Story 5.2: sweep items orphaned in `processing` by a crash/OOM before serving.
+  reconcileInterruptedItems(getDb());
   const app = await buildServer();
   // Story 2.4: bind is config-driven; default HOST (2.1) is 127.0.0.1 (secure
   // default — only an explicit non-empty HOST exposes it).
