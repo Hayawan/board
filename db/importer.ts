@@ -18,8 +18,9 @@ import type { DbHandle } from './index.js';
 //       files (gracefully skipping any that are absent) and delegates to (a).
 //
 // Idempotency: the original record `id` is preserved as `item.id` (the stable dedupe
-// key). writeItem upserts by id and replaces the item's assets + FTS row, so a
-// second run yields the same item/asset counts and exactly one FTS hit per item.
+// key). importRecords SKIPS a record whose id already exists (global dedupe by PK)
+// rather than re-writing it — so a second run creates nothing, leaves existing rows
+// (incl. user edits) and the FTS index untouched, and reports created=0/skipped=N.
 
 type Mapped = { item: NewItem; assets: NewAsset[] };
 type RawRecord = Record<string, unknown>;
