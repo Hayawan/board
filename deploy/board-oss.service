@@ -20,6 +20,12 @@ Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=8080
 Environment=DATA_DIR=/var/lib/board-oss
+# HOME must be WRITABLE: headless Chromium writes ~/.config and ~/.cache during
+# capture, and ProtectSystem=strict makes the code dir (/opt/board-oss) read-only.
+# Point HOME at the (writable) data dir so capture works under the hardened unit.
+Environment=HOME=/var/lib/board-oss
+Environment=XDG_CONFIG_HOME=/var/lib/board-oss/.config
+Environment=XDG_CACHE_HOME=/var/lib/board-oss/.cache
 
 Restart=on-failure
 RestartSec=3

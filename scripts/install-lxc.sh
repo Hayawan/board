@@ -48,6 +48,16 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$DATA_DIR"
 
 echo "==> Installing + starting the systemd unit"
 install -m 644 "$APP_DIR/deploy/board-oss.service" /etc/systemd/system/board-oss.service
+# Substitute the tunables into the installed unit so PORT/DATA_DIR/APP_DIR overrides
+# actually take effect (otherwise the unit's hardcoded defaults diverge from the
+# script's poll → a false "unhealthy" at the end). The unit's defaults are the
+# substitution anchors; sed is global so DATA_DIR also updates HOME/XDG/ReadWritePaths.
+UNIT=/etc/systemd/system/board-oss.service
+sed -i \
+  -e "s#/opt/board-oss#${APP_DIR}#g" \
+  -e "s#/var/lib/board-oss#${DATA_DIR}#g" \
+  -e "s#PORT=8080#PORT=${PORT}#g" \
+  "$UNIT"
 systemctl daemon-reload
 systemctl enable --now board-oss
 
