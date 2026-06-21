@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { boards, items, type NewAsset } from '../db/schema.js';
 import { writeItem } from '../db/queue.js';
 import { createUrlScreenshotAdapter } from './url-screenshot.js';
-import type { BoardDescriptor } from '../descriptor/types.js';
+import { SYSTEM_COLUMNS, type BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from '../db/index.js';
 
 // Story 6.1 — the CaptureAdapter seam. Capture is generalized into adapters keyed by
@@ -127,7 +127,18 @@ export async function runCaptureForItem(
   });
 
   const item = handle.db.select().from(items).where(eq(items.id, args.itemId)).get();
-  const mergedFields = { ...((item?.fields as Record<string, unknown>) ?? {}), ...result.fields };
+
+  // Captured keys that are SYSTEM COLUMNS (e.g. `title`) belong on the column, not in
+  // the `item.fields` JSON bag (the descriptor contract: title/notes/favorite are
+  // system columns). Lift those out; merge the rest into fields. Without this, a
+  // URL-only capture would render title-less (the title would hide in fields.title).
+  const systemUpdates: Record<string, unknown> = {};
+  const capturedFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(result.fields)) {
+    if (SYSTEM_COLUMNS.has(k)) systemUpdates[k] = v;
+    else capturedFields[k] = v;
+  }
+  const mergedFields = { ...((item?.fields as Record<string, unknown>) ?? {}), ...capturedFields };
   const assetRows: NewAsset[] = result.assets.map((a, i) => ({
     id: `${args.itemId}-${a.kind}-${i}`,
     itemId: args.itemId,
@@ -139,5 +150,9 @@ export async function runCaptureForItem(
   }));
 
   // writeItem replaces the item's assets (delete-then-insert) → idempotent re-capture.
-  await writeItem(handle, { ...item, id: args.itemId, boardId: args.boardId, fields: mergedFields }, assetRows);
+  await writeItem(
+    handle,
+    { ...item, ...systemUpdates, id: args.itemId, boardId: args.boardId, fields: mergedFields },
+    assetRows,
+  );
 }

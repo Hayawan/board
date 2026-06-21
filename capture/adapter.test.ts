@@ -87,4 +87,19 @@ describe('runCaptureForItem idempotency (Story 6.1)', () => {
     // still exactly one item
     assert.equal(handle.db.select().from(items).all().length, 1);
   });
+
+  // captured system-column keys (title) land on the COLUMN, not the fields bag
+  it('lifts a captured `title` into the item.title column (not fields)', async () => {
+    const reg = createCaptureRegistry();
+    reg.register({
+      ingestMode: 'test',
+      fetch: async () => ({ fields: { title: 'Captured Title', body: 'prose' }, assets: [] }),
+    });
+    handle.db.insert(items).values({ id: 'it2', boardId: 'tb', source: 'https://y.example' }).run();
+    await runCaptureForItem(handle, reg, { itemId: 'it2', boardId: 'tb', source: 'https://y.example' });
+    const row = handle.db.select().from(items).where(eq(items.id, 'it2')).get();
+    assert.equal(row?.title, 'Captured Title', 'title lifted to the system column');
+    assert.equal((row?.fields as Record<string, unknown>).title, undefined, 'title not duplicated in fields');
+    assert.equal((row?.fields as Record<string, unknown>).body, 'prose', 'non-system fields stay in fields');
+  });
 });
