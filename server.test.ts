@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildServer } from "./server.js";
+import { buildServer, getListenOptions, warnIfExposed } from "./server.js";
+import { loadConfig } from "./config.js";
 import { BOOKMARKS_FILE, getCollection, loadCollection, saveCollection } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -258,4 +259,36 @@ test("POST /api/add returns 400 for invalid analysisAgent", async () => {
     body: JSON.stringify({ url: "https://example.com", analysisAgent: "gpt" }),
   });
   assert.equal(res.statusCode, 400);
+});
+
+// --- Story 2.4: localhost bind default + reverse-proxy posture ---
+
+test("getListenOptions defaults to 127.0.0.1:3141 (secure default)", () => {
+  const opts = getListenOptions(loadConfig({}));
+  assert.deepEqual(opts, { host: "127.0.0.1", port: 3141 });
+});
+
+test("getListenOptions binds an explicit HOST override", () => {
+  assert.equal(getListenOptions(loadConfig({ HOST: "0.0.0.0" })).host, "0.0.0.0");
+  // empty/whitespace HOST must NOT bind-all — it falls back to localhost (2.1 AC1)
+  assert.equal(getListenOptions(loadConfig({ HOST: "" })).host, "127.0.0.1");
+  assert.equal(getListenOptions(loadConfig({ PORT: "8080" })).port, 8080);
+});
+
+test("warnIfExposed warns on a non-localhost bind, stays silent on localhost", () => {
+  const warns: string[] = [];
+  const logger = { warn: (m: string) => warns.push(m) };
+
+  warnIfExposed({ host: "127.0.0.1", port: 3141 }, logger);
+  assert.equal(warns.length, 0, "localhost must not warn");
+
+  warnIfExposed({ host: "0.0.0.0", port: 3141 }, logger);
+  assert.equal(warns.length, 1, "non-localhost must warn exactly once");
+  assert.match(warns[0], /0\.0\.0\.0/);
+  assert.match(warns[0], /reverse proxy|firewall/i);
+
+  // ::1 and localhost are also safe
+  warnIfExposed({ host: "::1", port: 3141 }, logger);
+  warnIfExposed({ host: "localhost", port: 3141 }, logger);
+  assert.equal(warns.length, 1, "::1 and localhost must not warn");
 });

@@ -1,6 +1,6 @@
 # Story 2.4: Localhost bind default + reverse-proxy posture
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,18 +31,18 @@ so that it is never accidentally exposed to the world.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing bind test first (TDD)** (AC: 1, 2, 4, 5)
-  - [ ] Add a test for `getListenOptions(config)`: default config → `{ host: "127.0.0.1", port: 3141 }`; `HOST=0.0.0.0` → `{ host: "0.0.0.0" }`. Assert THIS function (the seam), not `config.HOST` directly — so the test can go red on the current hardcoded literal in `server.ts`. Do NOT open a real `0.0.0.0` socket in CI.
-  - [ ] Add a test that a non-localhost `HOST` triggers the boot warning (AC 5) — assert against an injected logger / captured log line, not a real bind.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Make the server bind config-driven via `getListenOptions`** (AC: 1, 2, 4)
-  - [ ] Add `getListenOptions(config) => ({ port: config.PORT, host: config.HOST })`. In `server.ts`, replace the hardcoded `app.listen({ port: 3141, host: "127.0.0.1" })` (`server.ts:331-335`) with `app.listen(getListenOptions(config))`. Default `HOST` (Story 2.1) is `127.0.0.1`, so the secure default holds with zero config.
-  - [ ] Keep the entrypoint guard (`if (process.argv[1] === fileURLToPath(import.meta.url))`) so `buildServer()` stays listen-free for `inject()` tests (recon: `server.ts:331` guard). Do not move `listen` into `buildServer`.
-- [ ] **Task 3 — Boot warning + reverse-proxy docs** (AC: 3, 5)
-  - [ ] **Mandatory:** at boot, when `getListenOptions(config).host` is non-localhost, log a one-line warning ("bound to 0.0.0.0 — ensure a reverse proxy / firewall is in front"). (AC 5.)
-  - [ ] In the README: v1 has no built-in auth (AD7); bind localhost; put a reverse proxy (Caddy/Authelia/Tailscale) in front for auth/TLS; note the capture contract is token-authed even on localhost (Epic 6). Reference the Epic 11 packaging docs.
-- [ ] **Task 4 — Wire tests + verify green** (AC: 4)
-  - [ ] Run `npm test`; confirm green + existing suites (esp. `server.test.ts`) unaffected.
+- [x] **Task 1 — Write the failing bind test first (TDD)** (AC: 1, 2, 4, 5)
+  - [x] Add a test for `getListenOptions(config)`: default config → `{ host: "127.0.0.1", port: 3141 }`; `HOST=0.0.0.0` → `{ host: "0.0.0.0" }`. Assert THIS function (the seam), not `config.HOST` directly — so the test can go red on the current hardcoded literal in `server.ts`. Do NOT open a real `0.0.0.0` socket in CI.
+  - [x] Add a test that a non-localhost `HOST` triggers the boot warning (AC 5) — assert against an injected logger / captured log line, not a real bind.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Make the server bind config-driven via `getListenOptions`** (AC: 1, 2, 4)
+  - [x] Add `getListenOptions(config) => ({ port: config.PORT, host: config.HOST })`. In `server.ts`, replace the hardcoded `app.listen({ port: 3141, host: "127.0.0.1" })` (`server.ts:331-335`) with `app.listen(getListenOptions(config))`. Default `HOST` (Story 2.1) is `127.0.0.1`, so the secure default holds with zero config.
+  - [x] Keep the entrypoint guard (`if (process.argv[1] === fileURLToPath(import.meta.url))`) so `buildServer()` stays listen-free for `inject()` tests (recon: `server.ts:331` guard). Do not move `listen` into `buildServer`.
+- [x] **Task 3 — Boot warning + reverse-proxy docs** (AC: 3, 5)
+  - [x] **Mandatory:** at boot, when `getListenOptions(config).host` is non-localhost, log a one-line warning ("bound to 0.0.0.0 — ensure a reverse proxy / firewall is in front"). (AC 5.)
+  - [x] In the README: v1 has no built-in auth (AD7); bind localhost; put a reverse proxy (Caddy/Authelia/Tailscale) in front for auth/TLS; note the capture contract is token-authed even on localhost (Epic 6). Reference the Epic 11 packaging docs.
+- [x] **Task 4 — Wire tests + verify green** (AC: 4)
+  - [x] Run `npm test`; confirm green + existing suites (esp. `server.test.ts`) unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,27 @@ so that it is never accidentally exposed to the world.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 149 pass / 0 fail (146 prior + 3 new bind tests).
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied. **Epic 2 complete.**
+- **`getListenOptions(cfg)`** returns the exact `{ port, host }` object passed to `app.listen` — the testable seam. `server.ts` entrypoint now calls `app.listen(getListenOptions())` (the hardcoded `{port:3141,host:"127.0.0.1"}` literals removed). Default `HOST` (2.1) is `127.0.0.1`, so the secure default holds with zero config; empty/whitespace `HOST` also falls back to localhost (depends on 2.1 AC1, cross-checked). The test asserts the SEAM (not `config.HOST`), so it would go red on a stray hardcoded literal.
+- **`buildServer()` stays listen-free** — listening only under the entrypoint guard, preserving the `inject()` test seam.
+- **Boot warning (AC5, mandatory):** `warnIfExposed(opts, logger=console)` logs a one-line reverse-proxy/firewall warning when the host is non-localhost (`127.0.0.1`/`::1`/`localhost` are silent). Tested with an injected logger (no real socket opened).
+- **README** documents the reverse-proxy auth model: v1 ships no built-in auth (AD7); localhost bind default; put Caddy/Authelia/Tailscale in front to expose; capture contract token-authed even on localhost; `oslo`+`argon2` reserved for v2. Also carries the config table (satisfies Story 2.1 Task 3).
+- **No auth built** (out of scope, AD7). No real `0.0.0.0` socket opened in tests.
+
 ### File List
+
+- `server.ts` (modified) — `getListenOptions` + `warnIfExposed` + config-driven entrypoint bind.
+- `server.test.ts` (modified) — 3 bind tests (default, override + empty-string safety, warn-on-exposed).
+- `README.md` (new) — reverse-proxy security model + config table + portability.
+
+### Change Log
+
+- 2026-06-20 — Story 2.4 implemented: config-driven localhost-default bind via `getListenOptions`, mandatory non-localhost boot warning, reverse-proxy README. Epic 2 complete. Status → review.

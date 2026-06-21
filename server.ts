@@ -13,9 +13,37 @@ import {
   mutateCollection,
   type CollectionMeta,
 } from "./storage.js";
-import { config, ensureDataDir } from "./config.js";
+import { config, ensureDataDir, type Config } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// --- Story 2.4: bind posture (localhost default + reverse-proxy guidance) ---
+
+export interface ListenOptions {
+  port: number;
+  host: string;
+}
+
+/** The exact object server.ts passes to app.listen — the testable bind seam. */
+export function getListenOptions(cfg: Config = config): ListenOptions {
+  return { port: cfg.port, host: cfg.host };
+}
+
+const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
+/**
+ * Log a one-line warning when bound to a non-localhost address (AC 5) — the v1
+ * safety net for an operator who exposes the port without reading the README,
+ * given there is no built-in auth (reverse-proxy-only, AD7).
+ */
+export function warnIfExposed(opts: ListenOptions, logger: { warn: (m: string) => void } = console): void {
+  if (!LOCAL_HOSTS.has(opts.host)) {
+    logger.warn(
+      `⚠  board-oss bound to ${opts.host}:${opts.port} — it ships no built-in auth. ` +
+        `Ensure a reverse proxy (Caddy/Authelia/Tailscale) or firewall is in front.`,
+    );
+  }
+}
 const TAXONOMY_FILE = path.join(__dirname, "taxonomy.json");
 
 interface Bookmark {
@@ -360,6 +388,10 @@ export async function buildServer(opts: { screenshotsDir?: string } = {}) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ensureDataDir(); // Story 2.2: create DATA_DIR + screenshots on real boot (AC 2)
   const app = await buildServer();
-  await app.listen({ port: 3141, host: "127.0.0.1" });
-  console.log("🎨  Board running at http://localhost:3141");
+  // Story 2.4: bind is config-driven; default HOST (2.1) is 127.0.0.1 (secure
+  // default — only an explicit non-empty HOST exposes it).
+  const listenOpts = getListenOptions();
+  warnIfExposed(listenOpts);
+  await app.listen(listenOpts);
+  console.log(`🎨  Board running at http://${listenOpts.host}:${listenOpts.port}`);
 }
