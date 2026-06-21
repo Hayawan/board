@@ -18,6 +18,8 @@ import { getDb, type DbHandle } from "./db/index.js";
 import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
 import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
 import { listBoardItemsForUi, getItemForUi } from "./db/hydrate.js";
+import { renameBoard, deleteBoardCascade } from "./db/board-actions.js";
+import { boards as boardsTable } from "./db/schema.js";
 import { addItemSkill } from "./skills/add-item.js";
 import { refetchItem } from "./enrichment/refetch.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
@@ -375,6 +377,28 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // off field-emptiness (an enabled box can legitimately return empty).
   app.get("/api/meta", async () => ({ providerConfigured: llm !== disabledLlm }));
 
+  // Board edit actions (the "Edit board" modal). Creation is via the compose-board /
+  // create-board skills; these cover rename + delete-with-cascade.
+  app.patch<{ Params: { id: string }; Body: { name?: string } }>(
+    "/api/boards/:id",
+    async (req, reply) => {
+      const name = (req.body?.name ?? "").trim();
+      if (!name) { reply.status(400); return { error: "name is required" }; }
+      try {
+        await renameBoard(opts.db ?? getDb(), req.params.id, name);
+        return { id: req.params.id, name };
+      } catch (err) {
+        reply.status(404);
+        return { error: (err as Error).message };
+      }
+    }
+  );
+  app.delete<{ Params: { id: string } }>("/api/boards/:id", async (req, reply) => {
+    const res = await deleteBoardCascade(opts.db ?? getDb(), req.params.id, screenshotsDir);
+    if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
+    return res;
+  });
+
   // Story 11.1: PURE LIVENESS probe — a cheap 200 with NO DB check (a DB-reachable
   // check would make it a readiness probe that flaps during a WAL checkpoint / long
   // write → systemd restart loop). A DB-reachable check, if ever wanted, is a separate
@@ -383,14 +407,24 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
 
-  // --- Collections manifest ---
-  // Story 7.2: attach each board's descriptor so the frontend's generic renderer
-  // (descriptor/render-map) has the field list + types. Served from the seed
-  // constants (no DB read → no test pollution); composed boards (Epic 10) will read
-  // theirs from SQLite.
-  app.get("/api/collections", async () =>
-    listCollections().map((c) => ({ ...c, descriptor: SEED_DESCRIPTORS[c.id] ?? null }))
-  );
+  // --- Collections manifest (SQLite-backed cutover) ---
+  // Lists the SQLite board rows so composed boards (create-board) appear and deleted
+  // boards disappear. `type` is derived (seeded ids keep their identity; composed
+  // boards map by view) to pick the frontend's renderer + chrome. The seeded boards
+  // exist because boot seeds them (server.ts entrypoint); tests inject a seeded db.
+  app.get("/api/collections", async () => {
+    const handle = opts.db ?? getDb();
+    return handle.db.select().from(boardsTable).all().map((b) => ({
+      id: b.id,
+      name: b.name,
+      view: b.view,
+      type:
+        b.id === INSPIRATION_BOARD_ID ? "inspiration"
+        : b.id === LIBRARY_BOARD_ID ? "library"
+        : b.view === "grid" ? "inspiration" : "library",
+      descriptor: b.descriptor,
+    }));
+  });
 
   // --- Taxonomy (Inspiration vocabulary; unchanged) ---
   app.get("/api/taxonomy", async () =>

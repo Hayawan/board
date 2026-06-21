@@ -28,15 +28,20 @@ const LIBRARY_ITEM = {
 
 // --- GET /api/collections ---
 
-test("GET /api/collections returns all collections including library", async () => {
-  const app = await buildServer();
-  const res = await app.inject({ method: "GET", url: "/api/collections" });
-  assert.equal(res.statusCode, 200);
-  const body = JSON.parse(res.body) as any[];
-  assert.ok(Array.isArray(body), "should return an array");
-  assert.ok(body.some((c) => c.id === "inspiration"), "should include inspiration");
-  assert.ok(body.some((c) => c.id === "library"), "should include library");
-  assert.ok(body.every((c) => c.id && c.name && c.type && c.view), "each entry should have id/name/type/view");
+test("GET /api/collections returns all collections including library (SQLite)", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "GET", url: "/api/collections" });
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body) as any[];
+    assert.ok(Array.isArray(body), "should return an array");
+    assert.ok(body.some((c) => c.id === "inspiration"), "should include inspiration");
+    assert.ok(body.some((c) => c.id === "library"), "should include library");
+    assert.ok(body.every((c) => c.id && c.name && c.type && c.view), "each entry should have id/name/type/view");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- SQLite cutover: the collection item routes are now SQLite-backed (hydrated for
@@ -367,15 +372,21 @@ test("GET /api/meta reports providerConfigured=true when an llm is injected", as
 // --- Story 8.6: warm zero-config first-run boot ---
 
 test("first-run boot: serves with no LLM config + seeded boards present", async () => {
-  const app = await buildServer(); // no llm, no opts → no-AI first-run
-  const cols = await app.inject({ method: "GET", url: "/api/collections" });
-  assert.equal(cols.statusCode, 200);
-  const ids = JSON.parse(cols.body).map((c: { id: string }) => c.id);
-  assert.ok(ids.includes("inspiration") && ids.includes("library"), "seeded boards present on first run");
-  const meta = await app.inject({ method: "GET", url: "/api/meta" });
-  assert.equal(JSON.parse(meta.body).providerConfigured, false, "no-AI by default (nudge will show)");
-  const index = await app.inject({ method: "GET", url: "/" });
-  assert.equal(index.statusCode, 200, "the app serves the board UI");
+  // Boot seeds the boards (server.ts entrypoint); a seeded db models that fresh-boot state.
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const cols = await app.inject({ method: "GET", url: "/api/collections" });
+    assert.equal(cols.statusCode, 200);
+    const ids = JSON.parse(cols.body).map((c: { id: string }) => c.id);
+    assert.ok(ids.includes("inspiration") && ids.includes("library"), "seeded boards present on first run");
+    const meta = await app.inject({ method: "GET", url: "/api/meta" });
+    assert.equal(JSON.parse(meta.body).providerConfigured, false, "no-AI by default (nudge will show)");
+    const index = await app.inject({ method: "GET", url: "/" });
+    assert.equal(index.statusCode, 200, "the app serves the board UI");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- Story 9.1: search skill route ---
@@ -425,6 +436,35 @@ test("a seeded DB lets add-item succeed (first-run capture path, no 'unknown boa
     const res = await app.inject({ method: "POST", url: "/skills/add-item", headers: { "content-type": "application/json" }, body: JSON.stringify({ boardId: "inspiration", source: "https://example.com" }) });
     assert.equal(res.statusCode, 200, "add-item must NOT 500 on a seeded board");
     assert.equal(JSON.parse(res.body).status, "pending");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Edit-board routes (rename / delete) ---
+
+test("PATCH /api/boards/:id renames; DELETE /api/boards/:id cascades", async () => {
+  const { createBoardSkill } = await import("./skills/create-board.js");
+  const { buildCtx } = await import("./skills/types.js");
+  const { enqueueWrite } = await import("./db/queue.js");
+  const { boards } = await import("./db/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    await createBoardSkill.run(
+      { id: "wines", name: "Wines", descriptor: { view: "grid", ingest_mode: "url-screenshot", enrichment_prompt: "", fields: [] } },
+      buildCtx({ db: handle, queue: { enqueueWrite }, logger: console })
+    );
+    const r = await app.inject({ method: "PATCH", url: "/api/boards/wines", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Fine Wines" }) });
+    assert.equal(r.statusCode, 200);
+    assert.equal(handle.db.select().from(boards).where(eq(boards.id, "wines")).get()?.name, "Fine Wines");
+    assert.equal((await app.inject({ method: "PATCH", url: "/api/boards/wines", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "  " }) })).statusCode, 400);
+    assert.equal((await app.inject({ method: "PATCH", url: "/api/boards/ghost", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x" }) })).statusCode, 404);
+    const d = await app.inject({ method: "DELETE", url: "/api/boards/wines" });
+    assert.equal(d.statusCode, 200);
+    assert.equal(handle.db.select().from(boards).where(eq(boards.id, "wines")).get(), undefined);
+    assert.equal((await app.inject({ method: "DELETE", url: "/api/boards/ghost" })).statusCode, 404);
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -1417,10 +1417,165 @@
     }
     sw.innerHTML = collections.map(c =>
       `<button class="coll-btn${activeCollection === c.id ? ' active' : ''}" data-cid="${esc(c.id)}">${esc(c.name)}</button>`
-    ).join('');
-    sw.querySelectorAll('.coll-btn').forEach(b =>
+    ).join('')
+      // New-board + Edit-board affordances (compose-board / edit-board modals).
+      + `<button class="coll-btn coll-edit" id="edit-board-btn" title="Edit this board">⚙</button>`
+      + `<button class="coll-btn coll-new" id="new-board-btn" title="New board">+</button>`;
+    sw.querySelectorAll('.coll-btn[data-cid]').forEach(b =>
       b.addEventListener('click', () => setActiveCollection(b.dataset.cid))
     );
+    document.getElementById('new-board-btn').addEventListener('click', openComposeModal);
+    document.getElementById('edit-board-btn').addEventListener('click', () => openEditBoardModal(activeCollection));
+  }
+
+  // --- Story 10.1/10.3 + Edit: New board (compose→preview→create) & Edit board (rename/delete) ---
+
+  function slugifyBoardId(name) {
+    const base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'board';
+    return `${base}-${Date.now().toString(36).slice(-4)}`;
+  }
+
+  function showModalContent(html) {
+    modalLastFocused = document.activeElement;
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function fieldsPreviewHtml(descriptor) {
+    const fields = (descriptor && descriptor.fields) || [];
+    return fields.map(f =>
+      `<div class="board-field-row"><span class="field-badge badge">${esc(f.type)}</span> <strong>${esc(f.label)}</strong> <span style="color:var(--text-3)">${esc(f.key)}</span>${f.enrichable === false ? ' <span style="color:var(--text-3)">(yours)</span>' : ''}</div>`
+    ).join('') || '<div style="color:var(--text-3)">No fields</div>';
+  }
+
+  function openComposeModal() {
+    showModalContent(`
+      <div class="modal-body">
+        <div class="modal-title-row"><div class="modal-title">New board</div></div>
+        <p style="color:var(--text-2);font-size:14px;margin:4px 0 12px">Describe what you collect — you'll get an opinionated board to accept or refine.</p>
+        <textarea id="compose-desc" class="reflection-input" rows="3" placeholder="e.g. wines I've tasted, with region, grape, and my notes"></textarea>
+        <div class="modal-footer">
+          <span class="save-status" id="compose-status"></span>
+          <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+          <button class="btn btn-primary" id="compose-go">Compose</button>
+        </div>
+        <div id="compose-preview"></div>
+      </div>`);
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('compose-go').onclick = runCompose;
+  }
+
+  let composedProposal = null;
+  async function runCompose() {
+    const desc = document.getElementById('compose-desc').value.trim();
+    const status = document.getElementById('compose-status');
+    const goBtn = document.getElementById('compose-go');
+    if (!desc) { status.textContent = 'Describe the board first'; return; }
+    goBtn.disabled = true; status.textContent = 'Composing…';
+    try {
+      const res = await fetch('/skills/compose-board', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: desc }),
+      });
+      const data = await res.json();
+      if (!res.ok) { status.textContent = data.error || 'Compose failed'; return; }
+      composedProposal = data; // { status, name, descriptor }
+      status.textContent = data.status === 'draft' ? 'Draft (review/edit below)' : 'Proposed';
+      document.getElementById('compose-preview').innerHTML = `
+        <div class="steal-this" style="margin-top:16px">
+          <div class="field-label">Board name</div>
+          <input id="compose-name" class="reflection-input" value="${esc(data.name || '')}">
+          <div class="field-label" style="margin-top:12px">Fields (${(data.descriptor && data.descriptor.fields || []).length}) · ${esc(data.descriptor && data.descriptor.view || '')} view</div>
+          ${fieldsPreviewHtml(data.descriptor)}
+        </div>
+        <div class="modal-footer"><button class="btn btn-primary" id="compose-create">Create board</button></div>`;
+      document.getElementById('compose-create').onclick = createComposedBoard;
+    } catch { status.textContent = 'Network error'; }
+    finally { goBtn.disabled = false; }
+  }
+
+  async function createComposedBoard() {
+    if (!composedProposal) return;
+    const name = (document.getElementById('compose-name').value || composedProposal.name || '').trim();
+    const status = document.getElementById('compose-status');
+    const btn = document.getElementById('compose-create');
+    if (!name) { status.textContent = 'Name is required'; return; }
+    btn.disabled = true; status.textContent = 'Creating…';
+    try {
+      const id = slugifyBoardId(name);
+      const res = await fetch('/skills/create-board', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, descriptor: composedProposal.descriptor }),
+      });
+      const data = await res.json();
+      if (!res.ok) { status.textContent = data.error || 'Create failed'; btn.disabled = false; return; }
+      closeModal();
+      await load();
+      await setActiveCollection(id);
+    } catch { status.textContent = 'Network error'; btn.disabled = false; }
+  }
+
+  function openEditBoardModal(boardId) {
+    const col = collections.find(c => c.id === boardId);
+    if (!col) return;
+    showModalContent(`
+      <div class="modal-body">
+        <div class="modal-title-row"><div class="modal-title">Edit board</div></div>
+        <div class="steal-this" style="margin-top:8px">
+          <div class="field-label">Board name</div>
+          <input id="edit-board-name" class="reflection-input" value="${esc(col.name)}">
+        </div>
+        <div class="modal-footer">
+          <span class="save-status" id="edit-board-status"></span>
+          <button class="btn btn-ghost" id="modal-cancel">Close</button>
+          <button class="btn btn-primary" id="edit-board-save">Save name</button>
+        </div>
+        <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px">
+          <div class="field-label" style="color:var(--danger,#ef4444)">Danger zone</div>
+          <p style="color:var(--text-3);font-size:13px;margin:6px 0 10px">Deletes the board and all its items + screenshots. This cannot be undone.</p>
+          <button class="btn btn-ghost" id="edit-board-delete" style="color:var(--danger,#ef4444)">Delete board</button>
+          <span id="edit-board-delete-confirm" style="display:none">
+            <button class="btn btn-primary" id="edit-board-delete-yes" style="background:var(--danger,#ef4444)">Really delete</button>
+            <button class="btn btn-ghost" id="edit-board-delete-no">Keep</button>
+          </span>
+        </div>
+      </div>`);
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('edit-board-save').onclick = () => saveBoardName(boardId);
+    document.getElementById('edit-board-delete').onclick = () => {
+      document.getElementById('edit-board-delete').style.display = 'none';
+      document.getElementById('edit-board-delete-confirm').style.display = 'inline';
+    };
+    document.getElementById('edit-board-delete-no').onclick = () => {
+      document.getElementById('edit-board-delete-confirm').style.display = 'none';
+      document.getElementById('edit-board-delete').style.display = 'inline';
+    };
+    document.getElementById('edit-board-delete-yes').onclick = () => deleteBoard(boardId);
+  }
+
+  async function saveBoardName(boardId) {
+    const name = document.getElementById('edit-board-name').value.trim();
+    const status = document.getElementById('edit-board-status');
+    if (!name) { status.textContent = 'Name is required'; return; }
+    status.textContent = 'Saving…';
+    try {
+      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+      });
+      if (!res.ok) { status.textContent = 'Save failed'; return; }
+      closeModal();
+      await load();
+    } catch { status.textContent = 'Network error'; }
+  }
+
+  async function deleteBoard(boardId) {
+    try {
+      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) { document.getElementById('edit-board-status').textContent = 'Delete failed'; return; }
+      closeModal();
+      localStorage.setItem('board.activeCollection', 'inspiration');
+      await load();
+    } catch { document.getElementById('edit-board-status').textContent = 'Network error'; }
   }
 
   async function setActiveCollection(cid) {
