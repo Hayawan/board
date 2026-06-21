@@ -366,3 +366,28 @@ test("first-run boot: serves with no LLM config + seeded boards present", async 
   const index = await app.inject({ method: "GET", url: "/" });
   assert.equal(index.statusCode, 200, "the app serves the board UI");
 });
+
+// --- Story 9.1: search skill route ---
+
+test("POST /skills/search returns board-scoped FTS hits", async () => {
+  const { initDb } = await import("./db/index.js");
+  const { boards } = await import("./db/schema.js");
+  const { writeItem } = await import("./db/queue.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-searchroute-"));
+  const handle = initDb(path.join(dir, "s.db"));
+  try {
+    handle.db.insert(boards).values({ id: "a", name: "A", view: "list", descriptor: { view: "list", ingest_mode: "url-readable", enrichment_prompt: "", fields: [] } }).run();
+    await writeItem(handle, { id: "it", boardId: "a", source: "x", title: "zqxwv distinctive" });
+    const app = await buildServer({ db: handle });
+    const res = await app.inject({ method: "POST", url: "/skills/search", headers: { "content-type": "application/json" }, body: JSON.stringify({ boardId: "a", q: "zqxwv" }) });
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.ok(body.items.some((i: { id: string }) => i.id === "it"), "FTS hit returned via the skill route");
+    // malformed query → no 500
+    const bad = await app.inject({ method: "POST", url: "/skills/search", headers: { "content-type": "application/json" }, body: JSON.stringify({ boardId: "a", q: 'foo"bar' }) });
+    assert.equal(bad.statusCode, 200);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
