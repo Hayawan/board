@@ -1,6 +1,6 @@
 # Story 1.3: Single-writer queue + atomic writes + busy_timeout
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,23 +34,23 @@ so that concurrent or bursty writes never corrupt the DB and `SQLITE_BUSY` never
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing tests first (TDD)** (AC: 1, 3, 4, 6)
-  - [ ] Create `db/queue.test.ts`: the **async read-modify-write** test (AC 3) — seed a counter row; fire N (≥50) ops, each `enqueueWrite(async () => { read counter; await tick; write counter+1 })`; `await Promise.all`; assert final counter == N. This is the test that must fail without serialization (lost updates → final < N), so confirm the red is a *concurrency* failure, not just a missing symbol.
-  - [ ] Add the **atomicity/rollback** test (AC 4): a write op that inserts a row then throws; assert no row persists afterward.
-  - [ ] Add the `PRAGMA busy_timeout` non-zero test (AC 1).
-  - [ ] Run; confirm red for the right reasons before implementing.
-- [ ] **Task 2 — Set `busy_timeout` on connection init** (AC: 1)
-  - [ ] In `db/index.ts` (Story 1.1's connection module), set `PRAGMA busy_timeout = <ms>` alongside the WAL pragma. Make the value config-overridable later (a constant with a `// Story 2.1 env` marker is fine; do not build the env loader here).
-- [ ] **Task 3 — Implement the single serialized writer** (AC: 2, 3)
-  - [ ] Create the write-serialization primitive in `db/queue.ts` (architecture §6 names this file). Implement a single async worker / promise-chain that serializes write operations: `enqueueWrite(fn)` returns a promise that resolves with `fn`'s result, and the worker guarantees only one `fn` runs at a time.
-  - [ ] Expose a write API the rest of the app uses for all mutations (e.g. `withWriter(fn)` / `enqueueWrite(fn)`), so Story 5.1's job worker can drain capture/enrichment jobs through the same single-writer path.
-  - [ ] Document explicitly that **reads do not need to go through the writer** (WAL allows concurrent reads); only writes serialize.
-- [ ] **Task 4 — Establish the typed item-write choke-point + atomicity** (AC: 2, 4, 5)
-  - [ ] Create a single typed item-write helper (e.g. `writeItem(item)` / `upsertItem(item)`) distinct from the generic `enqueueWrite(fn)`. ALL item inserts/updates flow through it. This is the one place Story 1.4 hooks `search_blob` assembly + FTS sync into — so name it here and document that 1.4 owns adding the blob/FTS body, 1.3 owns the helper's existence + transaction wrapper.
-  - [ ] Wrap each enqueued write operation in a transaction so a partway failure rolls back (AC 4) — `better-sqlite3`'s synchronous transaction API is fine inside the serialized `fn`.
-  - [ ] No consumers exist yet (add.ts/server.ts still use flat-JSON) — this establishes the API + choke-point, not a retrofit of callers.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the new test file to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
+- [x] **Task 1 — Write the failing tests first (TDD)** (AC: 1, 3, 4, 6)
+  - [x] Create `db/queue.test.ts`: the **async read-modify-write** test (AC 3) — seed a counter row; fire N (≥50) ops, each `enqueueWrite(async () => { read counter; await tick; write counter+1 })`; `await Promise.all`; assert final counter == N. This is the test that must fail without serialization (lost updates → final < N), so confirm the red is a *concurrency* failure, not just a missing symbol.
+  - [x] Add the **atomicity/rollback** test (AC 4): a write op that inserts a row then throws; assert no row persists afterward.
+  - [x] Add the `PRAGMA busy_timeout` non-zero test (AC 1).
+  - [x] Run; confirm red for the right reasons before implementing.
+- [x] **Task 2 — Set `busy_timeout` on connection init** (AC: 1)
+  - [x] In `db/index.ts` (Story 1.1's connection module), set `PRAGMA busy_timeout = <ms>` alongside the WAL pragma. Make the value config-overridable later (a constant with a `// Story 2.1 env` marker is fine; do not build the env loader here).
+- [x] **Task 3 — Implement the single serialized writer** (AC: 2, 3)
+  - [x] Create the write-serialization primitive in `db/queue.ts` (architecture §6 names this file). Implement a single async worker / promise-chain that serializes write operations: `enqueueWrite(fn)` returns a promise that resolves with `fn`'s result, and the worker guarantees only one `fn` runs at a time.
+  - [x] Expose a write API the rest of the app uses for all mutations (e.g. `withWriter(fn)` / `enqueueWrite(fn)`), so Story 5.1's job worker can drain capture/enrichment jobs through the same single-writer path.
+  - [x] Document explicitly that **reads do not need to go through the writer** (WAL allows concurrent reads); only writes serialize.
+- [x] **Task 4 — Establish the typed item-write choke-point + atomicity** (AC: 2, 4, 5)
+  - [x] Create a single typed item-write helper (e.g. `writeItem(item)` / `upsertItem(item)`) distinct from the generic `enqueueWrite(fn)`. ALL item inserts/updates flow through it. This is the one place Story 1.4 hooks `search_blob` assembly + FTS sync into — so name it here and document that 1.4 owns adding the blob/FTS body, 1.3 owns the helper's existence + transaction wrapper.
+  - [x] Wrap each enqueued write operation in a transaction so a partway failure rolls back (AC 4) — `better-sqlite3`'s synchronous transaction API is fine inside the serialized `fn`.
+  - [x] No consumers exist yet (add.ts/server.ts still use flat-JSON) — this establishes the API + choke-point, not a retrofit of callers.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the new test file to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
 
 ## Dev Notes
 
@@ -105,10 +105,30 @@ so that concurrent or bursty writes never corrupt the DB and `SQLITE_BUSY` never
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 117 pass / 0 fail (112 prior + 5 new queue tests).
+
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied.
+- **`busy_timeout`** set to 5000ms in `db/index.ts` next to WAL/FK, behind a `BUSY_TIMEOUT_MS` constant marked `// Story 2.1 env`. AC1 test reads `PRAGMA busy_timeout` back and asserts non-zero.
+- **`enqueueWrite(fn)`** — generic serial worker (promise-chain): each op awaits the previous to settle; chain swallows errors so one failure can't wedge the queue, but the caller's promise still rejects. Kept generic so Story 5.1's job worker layers on top.
+- **Serialization proof (AC3)** is the async read-modify-write (read → `await setImmediate` → write+1) with N=64; final==64. This fails for the right reason (lost updates → ~1) without serialization — the count==N tautology trap the story flagged is avoided. Added an explicit "max one active at a time + preserves enqueue order" test too.
+- **Atomicity (AC4):** `enqueueTransaction(handle, fn)` runs `fn` inside a `better-sqlite3` transaction via the serializer; a partway throw rolls back (tested: insert then throw → zero rows, promise rejects).
+- **Typed item-write choke-point (AC5):** `writeItem(handle, item)` (distinct from `enqueueWrite`) upserts inside the transaction — the single place Story 1.4 will hook `search_blob` assembly + FTS sync, with a marker comment there. No call site can bypass it.
+- **Reads do NOT serialize** — documented in `db/queue.ts` (WAL = concurrent readers + one writer).
+- **Scope respected:** job lifecycle/status/timeouts deferred to 5.1/5.2; `storage.ts` file-lock path left intact (the prototype's old concurrency model, untouched).
+
 ### File List
+
+- `db/queue.ts` (new) — `enqueueWrite`, `enqueueTransaction`, `writeItem` (the single-writer spine + typed item choke-point).
+- `db/queue.test.ts` (new) — 5 tests: busy_timeout, async-RMW serialization, ordering, rollback, writeItem.
+- `db/index.ts` (modified) — added `busy_timeout` pragma + `BUSY_TIMEOUT_MS` constant.
+- `package.json` (modified) — appended `db/queue.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 1.3 implemented: single-writer queue (`enqueueWrite`/`enqueueTransaction`/`writeItem`) + `busy_timeout`; async-RMW serialization + atomicity proven. Status → review.

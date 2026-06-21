@@ -15,6 +15,9 @@ import * as schema from './schema.js';
 // cannot model declaratively. A raw bootstrap leaves that door open. The DDL below
 // mirrors db/schema.ts exactly; the schema round-trip test guards against drift.
 
+// Transient-lock wait budget. Config-overridable later. // Story 2.1 env
+const BUSY_TIMEOUT_MS = 5000;
+
 const BOOTSTRAP_SQL = `
 CREATE TABLE IF NOT EXISTS board (
   id TEXT PRIMARY KEY NOT NULL,
@@ -80,6 +83,10 @@ export function initDb(path: string): DbHandle {
   // SQLite — without this, AC 4 enforcement silently does not happen.
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
+  // busy_timeout (Story 1.3, NFR-2) covers transient lock waits (e.g. a WAL
+  // checkpoint) so SQLITE_BUSY never surfaces to a caller. The single-writer queue
+  // (db/queue.ts) handles logical write ordering; both are needed.
+  sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
   sqlite.exec(BOOTSTRAP_SQL);
   const db = drizzle(sqlite, { schema });
   return { db, sqlite };
