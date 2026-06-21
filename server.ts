@@ -23,7 +23,7 @@ import { selectProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
-import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR } from "./db/seed.js";
+import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
 
 // Story 7.2: the seeded boards' descriptors, served on /api/collections for the
@@ -522,6 +522,10 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 // Entrypoint guard — only listen when run directly
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ensureDataDir(); // Story 2.2: create DATA_DIR + screenshots on real boot (AC 2)
+  // Story 1.2/8.6: idempotently seed the boards on EVERY boot so a fresh DATA_DIR
+  // (container / LXC first-run) has the Inspiration + Library boards — without this,
+  // zero-config first-run (UJ-3/SM-1) and any add-item/capture 500 with "unknown board".
+  seed(getDb().db);
   // Story 5.2: sweep items orphaned in `processing` by a crash/OOM before serving.
   reconcileInterruptedItems(getDb());
   // Story 6.1: register capture adapters (6.2–6.4 populate the registry).

@@ -400,3 +400,22 @@ test("GET /healthz is a pure 200 liveness probe (no DB, no pollution)", async ()
   assert.equal(res.statusCode, 200);
   assert.deepEqual(JSON.parse(res.body), { ok: true });
 });
+
+// --- Story 11.2 review BLOCKER regression: boot must seed boards (zero-config first-run) ---
+
+test("a seeded DB lets add-item succeed (first-run capture path, no 'unknown board' 500)", async () => {
+  const { initDb } = await import("./db/index.js");
+  const { seed } = await import("./db/seed.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-seedboot-"));
+  const handle = initDb(path.join(dir, "s.db"));
+  try {
+    seed(handle.db); // what the boot entrypoint now does on a fresh DATA_DIR
+    const app = await buildServer({ db: handle });
+    const res = await app.inject({ method: "POST", url: "/skills/add-item", headers: { "content-type": "application/json" }, body: JSON.stringify({ boardId: "inspiration", source: "https://example.com" }) });
+    assert.equal(res.statusCode, 200, "add-item must NOT 500 on a seeded board");
+    assert.equal(JSON.parse(res.body).status, "pending");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
