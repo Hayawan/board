@@ -16,12 +16,21 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LIBRARY_FILE = path.join(__dirname, "library.json");
 
-function snapshotLibrary(): string {
-  return fs.readFileSync(LIBRARY_FILE, "utf-8");
+// library.json is a gitignored personal-capture file (absent in CI). Snapshot
+// tolerates a missing file (returns null); restore puts the original back, or
+// removes a file the test created — keeping a fresh checkout clean.
+function snapshotLibrary(): string | null {
+  try {
+    return fs.readFileSync(LIBRARY_FILE, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
 }
 
-function restoreLibrary(snapshot: string): void {
-  fs.writeFileSync(LIBRARY_FILE, snapshot);
+function restoreLibrary(snapshot: string | null): void {
+  if (snapshot === null) fs.rmSync(LIBRARY_FILE, { force: true });
+  else fs.writeFileSync(LIBRARY_FILE, snapshot);
 }
 
 // --- Manifest resolution ---

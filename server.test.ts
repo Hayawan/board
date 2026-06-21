@@ -11,6 +11,22 @@ import { BOOKMARKS_FILE, getCollection, loadCollection, saveCollection } from ".
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LIBRARY_FILE = path.join(__dirname, getCollection("library").dataFile);
 
+// library.json / bookmarks.json are gitignored personal-capture files (absent in
+// CI). snapshotFile tolerates a missing file (returns null); restoreFile puts the
+// original contents back, or removes a file the test created — keeping the tree clean.
+function snapshotFile(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+function restoreFile(file: string, snap: string | null): void {
+  if (snap === null) fs.rmSync(file, { force: true });
+  else fs.writeFileSync(file, snap);
+}
+
 const LIBRARY_ITEM = {
   id: "test-lib-001",
   url: "https://example.com/article",
@@ -139,7 +155,7 @@ test("PATCH /api/collections/:cid/items/:id returns 404 for an unknown item (SQL
 // --- Screenshot guard ---
 
 test("POST /api/collections/library/items/:id/screenshot returns 400 for non-visual collection", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
+  const libSnapshot = snapshotFile(LIBRARY_FILE);
   try {
     saveCollection("library", [LIBRARY_ITEM]);
     const app = await buildServer();
@@ -153,12 +169,12 @@ test("POST /api/collections/library/items/:id/screenshot returns 400 for non-vis
     const body = JSON.parse(res.body) as any;
     assert.ok(body.error.includes("screenshot"), "error message should mention screenshot");
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    restoreFile(LIBRARY_FILE, libSnapshot);
   }
 });
 
 test("POST /api/collections/inspiration/items/:id/screenshot passes visual guard", async () => {
-  const bmSnapshot = fs.readFileSync(BOOKMARKS_FILE, "utf-8");
+  const bmSnapshot = snapshotFile(BOOKMARKS_FILE);
   // Story 2.2 (AC 5): inject a temp screenshotsDir so the write never pollutes the
   // real DATA_DIR / app tree.
   const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-shot-"));
@@ -187,7 +203,7 @@ test("POST /api/collections/inspiration/items/:id/screenshot passes visual guard
     assert.equal(served.headers["content-type"], "image/png");
     assert.ok(served.rawPayload.length > 0, "served screenshot should have bytes");
   } finally {
-    fs.writeFileSync(BOOKMARKS_FILE, bmSnapshot);
+    restoreFile(BOOKMARKS_FILE, bmSnapshot);
     fs.rmSync(shotDir, { recursive: true, force: true });
   }
 });
@@ -233,7 +249,7 @@ test("POST /api/collections/no-such-cid/items returns 4xx for unknown collection
 // --- Legacy alias: PATCH /api/bookmarks/:id ---
 
 test("PATCH /api/bookmarks/:id (alias) updates favorite field and preserves other fields", async () => {
-  const bmSnapshot = fs.readFileSync(BOOKMARKS_FILE, "utf-8");
+  const bmSnapshot = snapshotFile(BOOKMARKS_FILE);
   try {
     const testItem = { id: "bm-alias-test", url: "https://example.com", added: "2025-01-01", screenshot: null, title: "Test", meta: { audience: "consumer", form: "app", domain: null, tags: [], tier: "reference", tone: [] }, design: { steal_this: "x", above_fold: "x", nav_pattern: "x", whitespace: "x", color_story: "x", design_system_score: "bespoke" }, reflection: { five_second_message: "x", apply_to_naruki: "keep me" }, favorite: false, analysis_agent: "claude", analysis_model: null };
     saveCollection("inspiration", [testItem]);
@@ -249,7 +265,7 @@ test("PATCH /api/bookmarks/:id (alias) updates favorite field and preserves othe
     assert.equal(body.favorite, true);
     assert.equal(body.reflection.apply_to_naruki, "keep me", "other fields must not be clobbered");
   } finally {
-    fs.writeFileSync(BOOKMARKS_FILE, bmSnapshot);
+    restoreFile(BOOKMARKS_FILE, bmSnapshot);
   }
 });
 
