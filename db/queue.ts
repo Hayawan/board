@@ -95,15 +95,18 @@ export function enqueueJob(job: Job, opts?: { timeoutFn?: TimeoutFn }): Promise<
     const controller = new AbortController();
     let settled = false;
 
-    // Resolve with the job's outcome AND an optional teardown the slot must await.
-    const outcome = await new Promise<{ result: JobResult; teardown?: Promise<void> }>((resolve) => {
+    // Resolve with the job's outcome AND, on timeout, a teardown thunk the slot must
+    // await. The thunk (not an already-invoked promise) is run later inside a guarded
+    // await so a misbehaving teardown — even a synchronous throw — can't wedge the
+    // worker chain.
+    const outcome = await new Promise<{ result: JobResult; runTeardown?: () => Promise<void> | void }>((resolve) => {
       const cancel = timeoutFn(() => {
         if (settled) return;
         settled = true;
         controller.abort();
         resolve({
           result: { type: job.type, ok: false, timedOut: true, error: `Job "${job.type}" timed out after ${job.timeoutMs}ms` },
-          teardown: job.teardown?.(controller.signal),
+          runTeardown: job.teardown ? () => job.teardown!(controller.signal) : undefined,
         });
       }, job.timeoutMs);
 
@@ -116,7 +119,14 @@ export function enqueueJob(job: Job, opts?: { timeoutFn?: TimeoutFn }): Promise<
     });
 
     resolveStatus(outcome.result); // mark failed/done immediately (status purpose)
-    if (outcome.teardown) await outcome.teardown; // SLOT held until memory released (AC3)
+    if (outcome.runTeardown) {
+      // SLOT held until memory released (AC3); never let a bad teardown wedge the queue.
+      try {
+        await outcome.runTeardown();
+      } catch {
+        /* teardown failure must not block the worker */
+      }
+    }
   });
 
   return status;
