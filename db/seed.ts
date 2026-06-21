@@ -132,3 +132,17 @@ export function insertBoard(
   const descriptor = validateDescriptor(board.descriptor);
   db.insert(boards).values({ id: board.id, name: board.name, view: descriptor.view, descriptor }).run();
 }
+
+// Story 10.3 — the descriptor UPDATE primitive (create-board only INSERTs). Used by
+// generate-fields' accept to append fields. Append-only / schema-as-data: existing
+// items keep working (new fields render empty until enriched). Validates before write.
+export function updateBoardDescriptor(
+  db: BetterSQLite3Database<Record<string, unknown>>,
+  boardId: string,
+  descriptor: BoardDescriptor,
+): void {
+  const valid = validateDescriptor(descriptor);
+  const existing = db.select().from(boards).where(eq(boards.id, boardId)).get();
+  if (!existing) throw new Error(`Cannot update descriptor: unknown board "${boardId}"`);
+  db.update(boards).set({ view: valid.view, descriptor: valid }).where(eq(boards.id, boardId)).run();
+}

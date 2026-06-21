@@ -1,6 +1,6 @@
 # Story 10.3: generate-fields skill (LLM-assisted field suggestion on an existing board)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,18 +28,18 @@ so that I can evolve a board's schema without designing it by hand.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing generate-fields tests first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `skills/generate-fields.test.ts`: mock provider proposes new fields for an existing descriptor; assert valid fields proposed; assert an off-list type AND a key duplicating an existing field are rejected (10.2 guardrails); assert the descriptor is unchanged until accept, then appended on accept.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement the `generate-fields` skill (propose; accept = descriptor UPDATE)** (AC: 1, 3)
-  - [ ] `skills/generate-fields.ts`: `run({ boardId, request }, ctx)` → load the existing descriptor → `ctx.llm.complete(prompt, fieldsSchema)` proposing ADDITIONAL fields → return the proposal (not persisted). **The prompt must propose OPINIONATED fields worth keeping for THIS board's lens** (the taste guardrail / SM-C1) — not a generic "add any field" list.
-  - [ ] **Accept = a descriptor UPDATE, not a create.** `create-board` (3.4) only INSERTs a new board — it has NO update path. Appending fields to an existing board needs an `update-board-descriptor` primitive (name it; it doesn't exist in 3.4 — this story introduces it, or extends create-board to upsert; decide + document). Don't mis-cite `create-board` for an update.
-- [ ] **Task 3 — Run proposals through the Story 10.2 guardrails (via the `existingKeys` seam)** (AC: 2)
-  - [ ] Call 10.2's `validateDescriptorProposal(proposal, { existingKeys: descriptor.fields.map(f => f.key) })` — the existing keys go through 10.2's parameter, NOT a forked check (wrap-not-fork). Inherits 10.2's CORRECTED reserved set (structural columns only; `favorite`/`notes`/`title` allowed). Validate-and-repair (one re-ask) then editable-draft.
-- [ ] **Task 4 — Accept appends; existing items keep working** (AC: 3)
-  - [ ] On accept, append the fields to the descriptor. Existing items simply have those fields empty (the generic renderer, Story 7.2, handles missing field values); the next enrichment (Story 7.1) can fill enrichable new fields. No migration of existing items needed (schema-as-data — the field just exists now).
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing generate-fields tests first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `skills/generate-fields.test.ts`: mock provider proposes new fields for an existing descriptor; assert valid fields proposed; assert an off-list type AND a key duplicating an existing field are rejected (10.2 guardrails); assert the descriptor is unchanged until accept, then appended on accept.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement the `generate-fields` skill (propose; accept = descriptor UPDATE)** (AC: 1, 3)
+  - [x] `skills/generate-fields.ts`: `run({ boardId, request }, ctx)` → load the existing descriptor → `ctx.llm.complete(prompt, fieldsSchema)` proposing ADDITIONAL fields → return the proposal (not persisted). **The prompt must propose OPINIONATED fields worth keeping for THIS board's lens** (the taste guardrail / SM-C1) — not a generic "add any field" list.
+  - [x] **Accept = a descriptor UPDATE, not a create.** `create-board` (3.4) only INSERTs a new board — it has NO update path. Appending fields to an existing board needs an `update-board-descriptor` primitive (name it; it doesn't exist in 3.4 — this story introduces it, or extends create-board to upsert; decide + document). Don't mis-cite `create-board` for an update.
+- [x] **Task 3 — Run proposals through the Story 10.2 guardrails (via the `existingKeys` seam)** (AC: 2)
+  - [x] Call 10.2's `validateDescriptorProposal(proposal, { existingKeys: descriptor.fields.map(f => f.key) })` — the existing keys go through 10.2's parameter, NOT a forked check (wrap-not-fork). Inherits 10.2's CORRECTED reserved set (structural columns only; `favorite`/`notes`/`title` allowed). Validate-and-repair (one re-ask) then editable-draft.
+- [x] **Task 4 — Accept appends; existing items keep working** (AC: 3)
+  - [x] On accept, append the fields to the descriptor. Existing items simply have those fields empty (the generic renderer, Story 7.2, handles missing field values); the next enrichment (Story 7.1) can fill enrichable new fields. No migration of existing items needed (schema-as-data — the field just exists now).
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,30 @@ so that I can evolve a board's schema without designing it by hand.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 317 pass / 0 fail (312 prior + 5 generate-fields). No pollution.
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied. Accept/reject UI is staged DOM (Chrome offline).
+- **`skills/generate-fields.ts`** — `run({boardId, request}, ctx)` → loads the descriptor → `complete(prompt, FieldsProposalSchema)` proposing ONLY new fields → returns the proposal. **Persists nothing.** `FieldsProposalSchema = z.object({ fields: BoardDescriptorSchema.shape.fields })` reuses 1.2's field schema (closed types). Prompt pushes OPINIONATED fields for the board's lens (SM-C1), lists existing keys, maps open vocab to text/tags, fences the request as untrusted.
+- **Guardrails reused via `existingKeys` (AC2, wrap-not-fork):** the proposed-fields fragment is validated as a descriptor (reusing the board's view/ingest_mode/enrichment_prompt) through 10.2's `validateAndRepair(propose, { existingKeys })` — off-list types, reserved keys, dups, AND existing-key collisions caught by the SAME validator. Existing-key collision → distinct `already-exists-on-board` error (tested). Bounded one repair, else editable draft.
+- **Accept = descriptor UPDATE (NOT create):** added `updateBoardDescriptor(db, boardId, descriptor)` to `db/seed.ts` (create-board only INSERTs — not mis-cited). Append-only / schema-as-data — NO item migration (existing items render new fields empty via 7.2, enrichment 7.1 fills enrichable). Tested: unchanged until accept, then `['region','grape']`.
+- **Provider-error graceful path:** a `complete` throw → empty editable draft (no 500), matching 10.2's posture.
+- **Registered** `generate-fields`.
+- **Scope honesty (DOM, staged):** the accept/reject preview UI needs a live browser (Chrome offline) — staged with the UI cutover. The propose skill + guardrails + `updateBoardDescriptor` accept primitive are delivered + tested.
+
 ### File List
+
+- `skills/generate-fields.ts` (new) — `generate-fields` skill + `buildGenerateFieldsPrompt`.
+- `skills/generate-fields.test.ts` (new) — 5 tests (propose+no-mutate; accept appends; off-list rejected; existing-key collision; unknown board).
+- `db/seed.ts` (modified) — `updateBoardDescriptor`.
+- `skills/registry.ts` (modified) — registers `generate-fields`.
+- `package.json` (modified) — appended `skills/generate-fields.test.ts`.
+
+### Change Log
+
+- 2026-06-20 — Story 10.3 implemented: generate-fields skill (propose fields for existing board) reusing 10.2 guardrails via existingKeys + updateBoardDescriptor accept primitive (append-only). Epic 10 complete. Accept/reject UI staged. Status → review.
