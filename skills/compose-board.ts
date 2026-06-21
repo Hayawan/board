@@ -68,7 +68,20 @@ export const composeBoardSkill = defineSkill(
       const { name, ...descriptor } = await ctx.llm.complete(prompt, MetaDescriptorSchema);
       return { name, descriptor };
     };
-    const outcome = await validateAndRepair(propose);
+    let outcome;
+    try {
+      outcome = await validateAndRepair(propose);
+    } catch (err) {
+      // Provider unavailable (no-AI mode) or transport/parse error: surface a blank
+      // EDITABLE DRAFT (never a 500, never a silent drop) — the user fills it in.
+      ctx.logger.warn(`compose-board: provider error, returning editable draft: ${(err as Error).name}`);
+      return {
+        status: 'draft' as const,
+        name: 'New board',
+        descriptor: { fields: [], enrichment_prompt: '', view: 'grid', ingest_mode: 'url-readable' },
+        errors: [{ code: 'provider-unavailable', message: 'AI is unavailable — edit this board manually.' }],
+      };
+    }
     if (outcome.ok) {
       return { status: 'ok' as const, name: outcome.name!, descriptor: outcome.descriptor };
     }

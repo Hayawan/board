@@ -59,4 +59,14 @@ describe('compose-board (Story 10.1)', () => {
     assert.ok(row, 'board row created on accept');
     assert.equal((row?.descriptor as { ingest_mode: string }).ingest_mode, 'manual-upload');
   });
+
+  // Story 10.2 review NIT — a provider throw (no-AI mode) surfaces an editable draft, not a 500
+  it('returns an editable draft (no throw) when the provider errors', async () => {
+    const throwingLlm: LLMProvider = { complete: async () => { throw new Error('no provider configured'); } };
+    const dctx = buildCtx({ db: handle, queue: { enqueueWrite }, logger: console, llm: throwingLlm });
+    const out = await composeBoardSkill.run({ description: 'wines' }, dctx);
+    assert.equal(out.status, 'draft');
+    assert.ok(Array.isArray((out.descriptor as { fields: unknown[] }).fields), 'a blank editable descriptor');
+    assert.ok(out.errors && out.errors.length > 0);
+  });
 });
