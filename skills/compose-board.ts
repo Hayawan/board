@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-import { BoardDescriptorSchema, FIELD_TYPES } from '../descriptor/types.js';
+import { FIELD_TYPES } from '../descriptor/types.js';
 import { MetaDescriptorSchema } from '../descriptor/meta-schema.js';
+import { validateAndRepair, type ProposalError } from '../descriptor/guardrails.js';
 import { defineSkill } from './types.js';
 
 // Story 10.1 — the thesis feature: turn a natural-language description into a proposed
@@ -37,15 +38,40 @@ export function buildComposePrompt(description: string): string {
   ].join('\n');
 }
 
+/** Repair re-ask prompt: feed the structured validation errors back for a corrected descriptor. */
+export function buildRepairPrompt(description: string, errors: ProposalError[]): string {
+  return [
+    buildComposePrompt(description),
+    '',
+    'Your previous proposal FAILED validation. Fix EXACTLY these problems and re-emit a',
+    'corrected descriptor (do not introduce new violations):',
+    ...errors.map((e) => `- [${e.code}] ${e.message}${e.field ? ` (field: ${e.field})` : ''}`),
+  ].join('\n');
+}
+
 export const composeBoardSkill = defineSkill(
   'compose-board',
   z.object({ description: z.string().min(1) }),
-  z.object({ name: z.string(), descriptor: BoardDescriptorSchema }),
+  // status:'ok' → an accept-able {name, descriptor}; status:'draft' → validation failed
+  // even after one repair, surfaced as an editable draft (NOTHING persisted either way).
+  z.object({
+    status: z.enum(['ok', 'draft']),
+    name: z.string(),
+    descriptor: z.any(),
+    errors: z.array(z.any()).optional(),
+  }),
   async (input, ctx) => {
-    // The provider validates the structured output against the meta-schema (Story 4.1);
-    // Story 10.2 adds validate-and-repair on top. Returns the PROPOSAL — no write.
-    const proposed = await ctx.llm.complete(buildComposePrompt(input.description), MetaDescriptorSchema);
-    const { name, ...descriptor } = proposed;
-    return { name, descriptor };
+    // Story 10.2: bounded validate-and-repair (≤ 1 repair) before any preview. The
+    // skill PERSISTS NOTHING — accept (create-board) is a separate call.
+    const propose = async (errors?: ProposalError[]) => {
+      const prompt = errors ? buildRepairPrompt(input.description, errors) : buildComposePrompt(input.description);
+      const { name, ...descriptor } = await ctx.llm.complete(prompt, MetaDescriptorSchema);
+      return { name, descriptor };
+    };
+    const outcome = await validateAndRepair(propose);
+    if (outcome.ok) {
+      return { status: 'ok' as const, name: outcome.name!, descriptor: outcome.descriptor };
+    }
+    return { status: 'draft' as const, name: outcome.draft!.name, descriptor: outcome.draft!.descriptor, errors: outcome.errors };
   },
 );

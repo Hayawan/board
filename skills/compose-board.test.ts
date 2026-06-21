@@ -24,7 +24,8 @@ const CANNED = {
   fields: [
     { key: 'region', label: 'Region', type: 'text', enrichable: true },
     { key: 'grape', label: 'Grape', type: 'tags', enrichable: true },
-    { key: 'notes', label: 'My notes', type: 'text', enrichable: false },
+    // NOT 'notes' — that's a reserved system column (Story 10.2). User field is distinct.
+    { key: 'tasting_notes', label: 'Tasting notes', type: 'text', enrichable: false },
   ],
 };
 
