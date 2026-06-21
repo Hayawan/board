@@ -1671,10 +1671,16 @@
     status.textContent = 'Queuing…';
     try {
       // Save any pending field edits first so the re-run uses the latest descriptor.
+      // Guard: if the edits are invalid, do NOT re-run against the stale descriptor.
       const name = document.getElementById('edit-board-name').value.trim();
-      await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+      const saveRes = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, descriptor: collectBoardDescriptor() }),
       });
+      if (!saveRes.ok) {
+        const e = await saveRes.json().catch(() => ({}));
+        status.textContent = e.error ? `Fix fields first: ${e.error}` : 'Fix field errors first';
+        return;
+      }
       const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/reenrich`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { status.textContent = 'Re-run failed'; return; }

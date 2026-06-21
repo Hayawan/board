@@ -17,6 +17,7 @@ import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
 import { enqueueWrite, enqueueTransaction, reconcileInterruptedItems } from "./db/queue.js";
 import { eq } from "drizzle-orm";
+import { validateDescriptorProposal } from "./descriptor/guardrails.js";
 import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
 import { listBoardItemsForUi, getItemForUi } from "./db/hydrate.js";
 import { renameBoard, deleteBoardCascade } from "./db/board-actions.js";
@@ -388,15 +389,22 @@ export async function buildServer(opts: BuildServerOptions = {}) {
       const hasDescriptor = req.body?.descriptor !== undefined;
       if (!hasName && !hasDescriptor) { reply.status(400); return { error: "name or descriptor required" }; }
       try {
-        // Descriptor first (validates; throws on off-list type etc. → 400). Single-writer.
+        // Descriptor first. Run the SAME composer guardrails as create/compose
+        // (reserved system-column keys, duplicate keys, field cap) — validateDescriptor
+        // alone only checks closed types, which would let the editor create a `notes`/
+        // `title` field that collides with a system column. Then persist (single-writer).
         if (hasDescriptor) {
+          const check = validateDescriptorProposal(req.body!.descriptor, {});
+          if (!check.ok) {
+            reply.status(400);
+            return { error: check.errors.map((e) => e.message).join("; "), errors: check.errors };
+          }
           try {
             await enqueueTransaction(handle, () =>
               updateBoardDescriptor(handle.db, req.params.id, req.body!.descriptor as BoardDescriptor)
             );
           } catch (err) {
             const msg = (err as Error).message;
-            // unknown board → 404; validation failure → 400
             reply.status(/unknown board/i.test(msg) ? 404 : 400);
             return { error: msg };
           }

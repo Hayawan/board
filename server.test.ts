@@ -491,6 +491,12 @@ test("PATCH /api/boards/:id updates the descriptor (valid) and 400s on invalid",
     const b = await app.inject({ method: "PATCH", url: "/api/boards/games", headers: { "content-type": "application/json" }, body: JSON.stringify({ descriptor: bad }) });
     assert.equal(b.statusCode, 400);
     assert.equal((handle.db.select().from(boards).where(eq(boards.id, "games")).get()?.descriptor as any).fields.length, 1, "unchanged after invalid");
+    // guardrails parity with the composer: a key shadowing a system column → 400
+    const reserved = { ...good, fields: [{ key: "notes", label: "Notes", type: "text", enrichable: true }] };
+    assert.equal((await app.inject({ method: "PATCH", url: "/api/boards/games", headers: { "content-type": "application/json" }, body: JSON.stringify({ descriptor: reserved }) })).statusCode, 400, "reserved system-column key rejected");
+    // duplicate keys → 400
+    const dup = { ...good, fields: [{ key: "dupe", label: "A", type: "text" }, { key: "dupe", label: "B", type: "text" }] };
+    assert.equal((await app.inject({ method: "PATCH", url: "/api/boards/games", headers: { "content-type": "application/json" }, body: JSON.stringify({ descriptor: dup }) })).statusCode, 400, "duplicate key rejected");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
