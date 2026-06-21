@@ -17,6 +17,7 @@ import {
   itemFieldEntries,
   buildFilters,
   matchesFilters,
+  applySseEvent,
 } from "./collections-ui.js";
 
 const COLLECTIONS = [
@@ -255,4 +256,26 @@ test("matchesFilters bridges the nested flat-JSON shape", () => {
   assert.ok(matchesFilters(insp, { "meta.audience": "b2b" }, d));
   assert.ok(matchesFilters(insp, { "meta.tags": "dark-theme" }, d));
   assert.ok(!matchesFilters(insp, { "meta.audience": "consumer" }, d));
+});
+
+// --- Story 8.4: optimistic-save card update from SSE events ---
+
+test("applySseEvent fills the card on a done event (fields from payload)", () => {
+  const card = { id: "i1", status: "processing", fields: { a: 1 } };
+  const next = applySseEvent(card, { itemId: "i1", status: "done", fields: { b: 2 } });
+  assert.equal(next.status, "done");
+  assert.deepEqual(next.fields, { a: 1, b: 2 }, "fields merged from the SSE payload (no refetch)");
+});
+
+test("applySseEvent sets error state on an error event", () => {
+  const card = { id: "i1", status: "processing", fields: {} };
+  const next = applySseEvent(card, { itemId: "i1", status: "error", error_reason: "timed out" });
+  assert.equal(next.status, "error");
+  assert.equal(next.errorReason, "timed out");
+});
+
+test("applySseEvent ignores an event for a different card (returns same ref)", () => {
+  const card = { id: "i1", status: "processing" };
+  const next = applySseEvent(card, { itemId: "other", status: "done" });
+  assert.equal(next, card, "event for another card must not mutate this one");
 });

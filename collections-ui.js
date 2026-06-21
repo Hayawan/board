@@ -92,6 +92,21 @@ export function matchesFilters(item, activeFilters, descriptor) {
   return true;
 }
 
+// Story 8.4: pure card-update for optimistic save. Given the card the user already
+// owns and an SSE `status` event (Story 5.3), compute the card's NEXT state — fields
+// filled on `done` (from the event payload, no refetch), errorReason on `error`. The
+// caller mutates the SAME card node in place (never re-keys/re-sorts — UJ-1). Returns
+// the card unchanged if the event isn't for this card (id mismatch).
+export function applySseEvent(card, event) {
+  if (!card || !event || card.id !== event.itemId) return card;
+  const next = { ...card, status: event.status };
+  if (event.fields && typeof event.fields === "object") {
+    next.fields = { ...(card.fields || {}), ...event.fields };
+  }
+  if (event.error_reason !== undefined) next.errorReason = event.error_reason;
+  return next;
+}
+
 export function collectionChrome(collection) {
   const isInspiration = collection.type === "inspiration";
   const isGrid = collection.view === "grid";
