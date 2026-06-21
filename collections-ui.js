@@ -1,4 +1,5 @@
 // Pure collection-UI helpers. No DOM, no window references — importable by node:test.
+import { escHtml } from "./descriptor/render-map.js";
 
 export function resolveActiveCollection(storedId, collections) {
   if (!storedId) return "inspiration";
@@ -105,6 +106,51 @@ export function applySseEvent(card, event) {
   }
   if (event.error_reason !== undefined) next.errorReason = event.error_reason;
   return next;
+}
+
+// Story 8.5: the dignified degraded/disabled/error state for an item's enriched
+// section (UJ-2/FR-9 — never raw error text, disabled ≠ failed). Pure: (item,
+// descriptor, {providerConfigured}) → markup string for the enriched-section state
+// (empty string when enriched fields exist and should just render normally).
+//
+// The set of user-safe error reasons Story 5.2 (cleanErrorReason) can produce. Any
+// OTHER error_reason value (raw/stack/sentinel) is NOT shown — it falls back to a
+// generic message, so internals can never leak to the card (the UJ-2 guarantee).
+const SAFE_ERROR_REASONS = new Set([
+  "could not reach the AI provider",
+  "AI returned invalid output",
+  "timed out",
+  "processing failed",
+]);
+
+export function renderEnrichmentState(item, descriptor, opts = {}) {
+  if (!item) return "";
+  const providerConfigured = !!opts.providerConfigured;
+
+  if (item.status === "error") {
+    const raw = item.errorReason ?? item.error_reason ?? "";
+    const safe = SAFE_ERROR_REASONS.has(raw) ? raw : "Couldn't analyze this item";
+    return (
+      `<div class="enrich-state enrich-error">` +
+      `<span class="enrich-reason">${escHtml(safe)}</span>` +
+      `<button class="retry-analysis" data-id="${escHtml(item.id ?? "")}">Retry analysis</button>` +
+      `</div>`
+    );
+  }
+  // Only `done` gets a degraded placeholder; pending/processing show the live shimmer.
+  if (item.status && item.status !== "done") return "";
+
+  const enrichableKeys = (descriptor && descriptor.fields ? descriptor.fields : [])
+    .filter((f) => f.enrichable)
+    .map((f) => f.key);
+  const hasEnriched = enrichableKeys.some((k) => hasValue(getFieldValue(item, k)));
+  if (hasEnriched) return ""; // real analysis present → render fields, no placeholder
+
+  // Empty enriched fields: disabled (no provider) vs neutral (provider on, returned
+  // empty). Drive off the PROVIDER signal, not emptiness — an enabled box can return empty.
+  return providerConfigured
+    ? `<div class="enrich-state enrich-empty">No analysis</div>`
+    : `<div class="enrich-state enrich-disabled">Enrichment disabled</div>`;
 }
 
 export function collectionChrome(collection) {

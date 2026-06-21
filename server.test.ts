@@ -337,3 +337,18 @@ test("PATCH /api/items/:id updates notes (SQLite-backed, injected db)", async ()
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Story 8.5: provider-configured signal ---
+
+test("GET /api/meta reports providerConfigured=false in no-AI mode (disabledLlm)", async () => {
+  const app = await buildServer(); // no opts.llm → selectProvider(config) → disabledLlm in test env
+  const res = await app.inject({ method: "GET", url: "/api/meta" });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).providerConfigured, false);
+});
+
+test("GET /api/meta reports providerConfigured=true when an llm is injected", async () => {
+  const app = await buildServer({ llm: { complete: async () => ({}) } as never });
+  const res = await app.inject({ method: "GET", url: "/api/meta" });
+  assert.equal(JSON.parse(res.body).providerConfigured, true);
+});

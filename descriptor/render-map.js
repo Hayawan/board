@@ -6,7 +6,7 @@
 // `image`/assets render separately (a screenshot is an asset row, not a field).
 
 /** Escape HTML text content — field values (enriched/captured) are UNTRUSTED. */
-function escHtml(value) {
+export function escHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

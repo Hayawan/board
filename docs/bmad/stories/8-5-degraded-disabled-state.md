@@ -1,6 +1,6 @@
 # Story 8.5: Degraded / disabled-LLM dignified state
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,17 +31,17 @@ so that nothing looks broken.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing dignified-state tests first (TDD)** (AC: 1, 2, 3, 5)
-  - [ ] Pure render-helper test with FOUR cases: (1) no-provider + empty → "disabled"-state + complete card; (2) provider-on + empty → neutral "No analysis", NOT "disabled"; (3) `status=error` with `error_reason="SENTINEL_STACK_xyz"` → "Retry analysis" present + safe reason shown + **sentinel string ABSENT** from markup; (4) populated `done` → no "disabled"/"No analysis". Pass the provider-configured signal into the helper.
-  - [ ] Run; confirm red for the right reason.
-- [ ] **Task 2 — Render the disabled vs neutral-empty state (off the provider signal)** (AC: 1, 2)
-  - [ ] In the card renderer (Story 7.2): pass in the **provider-configured signal** (Story 4.4). No-provider + empty enriched → quiet "enrichment disabled" state; provider-on + empty → neutral "No analysis". Captured + user fields (descriptor-driven — NOT a hardcoded screenshot) render normally so the card looks complete.
-- [ ] **Task 3 — Render the error state: show the safe reason + ONE quiet Retry** (AC: 3, 4)
-  - [ ] When `status=error`: show captured content + the **already-safe** `error_reason` (Story 5.2 made it safe FOR display) + ONE quiet, low-emphasis "Retry analysis" (not error-colored, not per-field). The bar is no raw/stack/secret text (AC 5) — display the safe reason; do NOT hide it behind a generic summary. Wire "Retry analysis" to Story 7.3 refetch (capture + enrichment).
-- [ ] **Task 4 — Pin the three-way (+boundary) rule** (AC: 1, 2, 5)
-  - [ ] Tell apart: (a) `done` + enriched fields → show them (no placeholder); (b) `done` + empty → "disabled" (no provider) OR neutral "No analysis" (provider on); (c) `error` → safe reason + quiet Retry. Drive (b)'s wording off the provider signal, NOT emptiness alone. Document the rule.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing dignified-state tests first (TDD)** (AC: 1, 2, 3, 5)
+  - [x] Pure render-helper test with FOUR cases: (1) no-provider + empty → "disabled"-state + complete card; (2) provider-on + empty → neutral "No analysis", NOT "disabled"; (3) `status=error` with `error_reason="SENTINEL_STACK_xyz"` → "Retry analysis" present + safe reason shown + **sentinel string ABSENT** from markup; (4) populated `done` → no "disabled"/"No analysis". Pass the provider-configured signal into the helper.
+  - [x] Run; confirm red for the right reason.
+- [x] **Task 2 — Render the disabled vs neutral-empty state (off the provider signal)** (AC: 1, 2)
+  - [x] In the card renderer (Story 7.2): pass in the **provider-configured signal** (Story 4.4). No-provider + empty enriched → quiet "enrichment disabled" state; provider-on + empty → neutral "No analysis". Captured + user fields (descriptor-driven — NOT a hardcoded screenshot) render normally so the card looks complete.
+- [x] **Task 3 — Render the error state: show the safe reason + ONE quiet Retry** (AC: 3, 4)
+  - [x] When `status=error`: show captured content + the **already-safe** `error_reason` (Story 5.2 made it safe FOR display) + ONE quiet, low-emphasis "Retry analysis" (not error-colored, not per-field). The bar is no raw/stack/secret text (AC 5) — display the safe reason; do NOT hide it behind a generic summary. Wire "Retry analysis" to Story 7.3 refetch (capture + enrichment).
+- [x] **Task 4 — Pin the three-way (+boundary) rule** (AC: 1, 2, 5)
+  - [x] Tell apart: (a) `done` + enriched fields → show them (no placeholder); (b) `done` + empty → "disabled" (no provider) OR neutral "No analysis" (provider on); (c) `error` → safe reason + quiet Retry. Drive (b)'s wording off the provider signal, NOT emptiness alone. Document the rule.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,33 @@ so that nothing looks broken.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 287 pass / 0 fail (280 prior + 5 dignified-state + 2 meta-route). No pollution.
+
 ### Completion Notes List
 
+- ✅ AC1, AC2, AC3, AC5 satisfied by the pure helper + the provider signal. AC4 (Retry → refetch) wiring is staged DOM (the `refetch` skill from 7.3 is ready; the button carries `data-id`).
+- **`renderEnrichmentState(item, descriptor, {providerConfigured})`** (pure, tested) — the three-way + boundary rule:
+  - `error` → captured content stays (rendered elsewhere) + the **safe** `error_reason` + ONE quiet `Retry analysis` (class `retry-analysis`, `data-id`). **Safe-reason allowlist** = exactly Story 5.2's `cleanErrorReason` outputs; ANY other value (raw/stack/sentinel) → generic "Couldn't analyze this item" (UJ-2 no-raw-text guarantee). Tested: `SENTINEL_STACK_xyz` ABSENT, "timed out" PRESENT.
+  - `done` + empty enriched + **no provider** → "Enrichment disabled"; + **provider on** → neutral "No analysis" (keyed off the PROVIDER signal, not emptiness).
+  - `done` + enriched present → "" (render fields). Boundary tested both directions.
+  - Descriptor-driven (no hardcoded screenshot check → Library card handled, AC2).
+- **Provider signal (AC1):** new `GET /api/meta → { providerConfigured }` (authoritative `llm !== disabledLlm`), reused by 8.6. Inject-tested both ways.
+- **Exposed** `renderEnrichmentState` via `window.collectionHelpers`.
+- **Scope honesty (DOM, staged):** wiring `renderEnrichmentState` into the live card/modal, fetching `/api/meta` on load, and binding `Retry analysis` → the 7.3 `refetch` skill (AC4) need a live browser to verify (Chrome offline) — staged with the UI cutover. Pure logic + signal delivered + tested.
+
 ### File List
+
+- `collections-ui.js` (modified) — `renderEnrichmentState` (+ imports `escHtml`).
+- `descriptor/render-map.js` (modified) — `escHtml` exported.
+- `collections-ui.test.ts` (modified) — 5 dignified-state tests.
+- `server.ts` (modified) — `GET /api/meta` provider signal.
+- `server.test.ts` (modified) — 2 meta-route inject tests.
+- `index.html` (modified) — exposes `renderEnrichmentState`.
+
+### Change Log
+
+- 2026-06-20 — Story 8.5 implemented: dignified degraded/disabled/error state + `GET /api/meta`. DOM wiring staged. Status → review.

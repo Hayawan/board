@@ -20,6 +20,7 @@ import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
+import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
 import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR } from "./db/seed.js";
@@ -364,6 +365,12 @@ export async function buildServer(opts: BuildServerOptions = {}) {
     reply.status(204);
     return null;
   });
+
+  // Story 8.5/8.6: the authoritative provider-configured signal (Story 4.4) — true
+  // when a real LLM transport is selected, false in no-AI mode. The frontend keys
+  // the "enrichment disabled" dignified state + the first-run nudge off THIS, never
+  // off field-emptiness (an enabled box can legitimately return empty).
+  app.get("/api/meta", async () => ({ providerConfigured: llm !== disabledLlm }));
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
 

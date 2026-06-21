@@ -18,6 +18,7 @@ import {
   buildFilters,
   matchesFilters,
   applySseEvent,
+  renderEnrichmentState,
 } from "./collections-ui.js";
 
 const COLLECTIONS = [
@@ -278,4 +279,40 @@ test("applySseEvent ignores an event for a different card (returns same ref)", (
   const card = { id: "i1", status: "processing" };
   const next = applySseEvent(card, { itemId: "other", status: "done" });
   assert.equal(next, card, "event for another card must not mutate this one");
+});
+
+// --- Story 8.5: dignified degraded / disabled / error state ---
+
+const ENRICH_DESCRIPTOR = { view: "grid", fields: [
+  { key: "summary", label: "Summary", type: "text", enrichable: true },
+  { key: "notes", label: "Notes", type: "text", enrichable: false },
+] };
+
+test("renderEnrichmentState: no provider + done + empty → 'Enrichment disabled'", () => {
+  const html = renderEnrichmentState({ id: "i", status: "done", fields: {} }, ENRICH_DESCRIPTOR, { providerConfigured: false });
+  assert.match(html, /Enrichment disabled/);
+  assert.doesNotMatch(html, /No analysis/);
+});
+
+test("renderEnrichmentState: provider ON + done + empty → neutral 'No analysis' (NOT disabled)", () => {
+  const html = renderEnrichmentState({ id: "i", status: "done", fields: {} }, ENRICH_DESCRIPTOR, { providerConfigured: true });
+  assert.match(html, /No analysis/);
+  assert.doesNotMatch(html, /disabled/i);
+});
+
+test("renderEnrichmentState: error with an UNSAFE reason → Retry present, sentinel ABSENT", () => {
+  const html = renderEnrichmentState({ id: "i", status: "error", errorReason: "SENTINEL_STACK_xyz" }, ENRICH_DESCRIPTOR, { providerConfigured: true });
+  assert.match(html, /Retry analysis/);
+  assert.doesNotMatch(html, /SENTINEL_STACK_xyz/, "raw/unsafe reason must never appear in markup");
+});
+
+test("renderEnrichmentState: error with a SAFE reason → the safe reason is shown", () => {
+  const html = renderEnrichmentState({ id: "i", status: "error", errorReason: "timed out" }, ENRICH_DESCRIPTOR, { providerConfigured: true });
+  assert.match(html, /timed out/);
+  assert.match(html, /Retry analysis/);
+});
+
+test("renderEnrichmentState: populated done → no placeholder (empty string)", () => {
+  const html = renderEnrichmentState({ id: "i", status: "done", fields: { summary: "real analysis" } }, ENRICH_DESCRIPTOR, { providerConfigured: false });
+  assert.equal(html, "");
 });
