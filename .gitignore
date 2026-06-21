@@ -11,3 +11,9 @@ screenshots/
 # (Self-hostable version will seed/auto-create these on first run.)
 bookmarks.json
 library.json
+
+# SQLite data dir (Story 1.1+) — created/seeded on first run, never committed.
+data/
+*.db
+*.db-wal
+*.db-shm
