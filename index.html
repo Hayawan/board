@@ -1360,6 +1360,28 @@
     applyCollectionChrome(activeCol);
     applyFilters();
     subscribeToStatus();
+    maybeShowAiNudge();
+  }
+
+  // Story 8.6: a peripheral, dismissible "enable AI" nudge — only when no provider is
+  // configured (the Story 4.4 signal via /api/meta) AND not previously dismissed. The
+  // board stays the hero (SM-C2): a small corner card, never a blocking modal/banner.
+  async function maybeShowAiNudge() {
+    if (document.getElementById('ai-nudge')) return;
+    try {
+      const meta = await fetch('/api/meta').then(r => r.json());
+      const dismissed = localStorage.getItem('board.aiNudgeDismissed') === '1';
+      if (!window.collectionHelpers.shouldShowEnableAiNudge({ providerConfigured: meta.providerConfigured, dismissed })) return;
+      const el = document.createElement('div');
+      el.id = 'ai-nudge';
+      el.style.cssText = 'position:fixed;bottom:16px;right:16px;max-width:300px;background:var(--surface,#16181d);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.5;color:var(--text-2);box-shadow:0 6px 20px rgba(0,0,0,0.35);z-index:40';
+      el.innerHTML = `<div style="margin-bottom:8px">Add an API key or coding-agent to enable AI analysis. Board works fully without it.</div><button id="ai-nudge-dismiss" style="font-size:12px;color:var(--accent,#f59e0b);background:none;border:none;padding:0;cursor:pointer">Dismiss</button>`;
+      document.body.appendChild(el);
+      document.getElementById('ai-nudge-dismiss').addEventListener('click', () => {
+        localStorage.setItem('board.aiNudgeDismissed', '1');
+        el.remove();
+      });
+    } catch { /* nudge is best-effort */ }
   }
 
   // Story 5.3: live status via SSE. On a transition, refetch the active board
@@ -1664,14 +1686,12 @@
     listEl.style.display = 'block';
     if (!filtered.length) {
       const hasItems = bookmarks.length > 0;
+      // Story 8.2 zero-match warm state vs Story 8.6 warm first-run (no cold CLI string).
       listEl.innerHTML = hasItems
         ? `<div class="empty" style="text-align:center;padding:64px 24px">
-            <p style="font-size:15px;color:var(--text-2)">No items match your filters</p>
+            <p style="font-size:15px;color:var(--text-2)">No items match these filters</p>
           </div>`
-        : `<div class="empty" style="text-align:center;padding:64px 24px">
-            <p style="font-size:15px;color:var(--text-2);margin-bottom:8px">No items yet</p>
-            <p style="font-family:monospace;font-size:12px;color:var(--text-3)">npx tsx add.ts &lt;url&gt; --collection library</p>
-          </div>`;
+        : emptyState();
       return;
     }
     listEl.innerHTML = filtered.map(b => `
@@ -1907,10 +1927,10 @@
   });
 
   function emptyState() {
-    return `<div class="empty">
-      <h2>No sites yet</h2>
-      <p style="color:var(--text-3);margin-top:8px">Run <code>npx tsx add.ts &lt;url&gt;</code> to add your first bookmark</p>
-    </div>`;
+    // Story 8.6: ONE warm, descriptor-driven empty state (purpose line + paste invite),
+    // replacing the prototype's cold CLI strings.
+    const activeCol = collections.find(c => c.id === activeCollection);
+    return window.collectionHelpers.renderEmptyState(activeCol);
   }
 
   function openModal(id) {
