@@ -73,4 +73,13 @@ describe('generate-fields (Story 10.3)', () => {
     const llm: LLMProvider = { complete: async () => ({ fields: [] }) as never };
     await assert.rejects(() => generateFieldsSkill.run({ boardId: 'nope', request: 'x' }, mk(llm)), /unknown board/i);
   });
+
+  // Review SHOULD-FIX — merged cap: existing(1) + proposed must not exceed FIELD_CAP(24)
+  it('rejects when proposed + existing fields exceed the merged field cap', async () => {
+    const many = Array.from({ length: 24 }, (_, i) => ({ key: `gen${i}`, label: `G${i}`, type: 'text' }));
+    const llm: LLMProvider = { complete: async () => ({ fields: many }) as never };
+    const out = await generateFieldsSkill.run({ boardId: 'wines', request: 'add lots' }, mk(llm));
+    assert.equal(out.status, 'draft', '24 new + 1 existing = 25 > cap → rejected');
+    assert.ok(out.errors!.some((e: { code: string }) => e.code === 'field-cap'));
+  });
 });

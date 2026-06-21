@@ -64,11 +64,16 @@ export function validateDescriptorProposal(
   const descriptor = parsed.data;
   const errors: ProposalError[] = [];
 
-  if (descriptor.fields.length > FIELD_CAP) {
-    errors.push({ code: 'field-cap', message: `too many fields: ${descriptor.fields.length} (max ${FIELD_CAP})` });
+  // Cap the RESULTING board: proposed fields + any existing keys (Story 10.3 passes
+  // the board's current keys, so generate-fields can't blow the cap by appending).
+  // compose-board passes no existingKeys → this is just the proposed count.
+  const existingKeys = opts.existingKeys ?? [];
+  const totalCount = descriptor.fields.length + existingKeys.length;
+  if (totalCount > FIELD_CAP) {
+    errors.push({ code: 'field-cap', message: `too many fields: ${totalCount} (max ${FIELD_CAP})` });
   }
 
-  const existing = new Set(opts.existingKeys ?? []);
+  const existing = new Set(existingKeys);
   const seen = new Set<string>();
   for (const f of descriptor.fields) {
     if (seen.has(f.key)) {
