@@ -1,6 +1,6 @@
 # Story 3.2: Generic /skills/:name HTTP route with zod validation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -37,19 +37,19 @@ so that adding a capability needs no new bespoke route.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing route tests first (TDD)** (AC: 1, 2, 3, 4, 5, 7)
-  - [ ] In `skills-route.test.ts`: build `buildServer({ registry })` with a fresh registry holding fake skills; `inject()` `POST /skills/echo` valid → 200 + output; invalid body → 400 + zod error, assert `run` NOT called (spy); `POST /skills/nope` → 404; a fake skill returning bad output → 500 (AC 4); a fake skill whose `run` throws → 500 (AC 5), assert the process didn't crash and no stack trace in the body.
-  - [ ] Run; confirm red (no route).
-- [ ] **Task 2 — Implement the generic route in `buildServer`** (AC: 1, 2, 3, 4, 5, 6)
-  - [ ] Add `app.post("/skills/:name", handler)` inside `buildServer` (recon: `buildServer` at `server.ts:246`, routes registered through `server.ts:322`). Handler: `registry.get(name)` → 404 if `undefined`; `inputSchema.safeParse(body)` → 400 + error if invalid (do NOT call `run`); build `ctx`; `try { result = await skill.run(input, ctx) } catch → 500`; `outputSchema.safeParse(result)` → 500 if invalid; else return the validated output.
-  - [ ] Distinguish error classes cleanly: input-invalid = 400, unknown-skill = 404, run-throw = 500, output-invalid = 500. Don't collapse into one catch-all; don't leak zod/stack internals to the client.
-- [ ] **Task 3 — Inject the registry + build the real ctx** (AC: 6)
-  - [ ] Make `buildServer({ registry, db, ... })` accept the registry as a parameter (Story 3.1's seam). At boot, the app constructs a registry via `createRegistry()` + `registerAllSkills(registry)` (early skills/fakes now; 3.3/3.4 add concrete ones) and passes it in. Tests pass a fresh registry holding only their fakes.
-  - [ ] Build `ctx` from the server's `db`/`queue`/`logger` and the `config`-selected `llm` (or `disabledLlm`); resolve `boardId` (not `collectionId`) from the route params/body where the skill needs it.
-- [ ] **Task 4 — Add a `skillsUrl(name)` frontend helper (thin)** (AC: 1)
-  - [ ] In `collections-ui.js`, add `skillsUrl(name)` → `/skills/${name}` alongside the existing URL builders (recon: `itemsUrl`/`addUrl`/etc. at `collections-ui.js:9-13`). This is the client seam for later UI work; no UI behavior change yet.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 6)
-  - [ ] Add the test file (if new) to the `test` script; run `npm test`; confirm green + existing suites unaffected (the new route must not disturb the existing `/api/*` routes).
+- [x] **Task 1 — Write the failing route tests first (TDD)** (AC: 1, 2, 3, 4, 5, 7)
+  - [x] In `skills-route.test.ts`: build `buildServer({ registry })` with a fresh registry holding fake skills; `inject()` `POST /skills/echo` valid → 200 + output; invalid body → 400 + zod error, assert `run` NOT called (spy); `POST /skills/nope` → 404; a fake skill returning bad output → 500 (AC 4); a fake skill whose `run` throws → 500 (AC 5), assert the process didn't crash and no stack trace in the body.
+  - [x] Run; confirm red (no route).
+- [x] **Task 2 — Implement the generic route in `buildServer`** (AC: 1, 2, 3, 4, 5, 6)
+  - [x] Add `app.post("/skills/:name", handler)` inside `buildServer` (recon: `buildServer` at `server.ts:246`, routes registered through `server.ts:322`). Handler: `registry.get(name)` → 404 if `undefined`; `inputSchema.safeParse(body)` → 400 + error if invalid (do NOT call `run`); build `ctx`; `try { result = await skill.run(input, ctx) } catch → 500`; `outputSchema.safeParse(result)` → 500 if invalid; else return the validated output.
+  - [x] Distinguish error classes cleanly: input-invalid = 400, unknown-skill = 404, run-throw = 500, output-invalid = 500. Don't collapse into one catch-all; don't leak zod/stack internals to the client.
+- [x] **Task 3 — Inject the registry + build the real ctx** (AC: 6)
+  - [x] Make `buildServer({ registry, db, ... })` accept the registry as a parameter (Story 3.1's seam). At boot, the app constructs a registry via `createRegistry()` + `registerAllSkills(registry)` (early skills/fakes now; 3.3/3.4 add concrete ones) and passes it in. Tests pass a fresh registry holding only their fakes.
+  - [x] Build `ctx` from the server's `db`/`queue`/`logger` and the `config`-selected `llm` (or `disabledLlm`); resolve `boardId` (not `collectionId`) from the route params/body where the skill needs it.
+- [x] **Task 4 — Add a `skillsUrl(name)` frontend helper (thin)** (AC: 1)
+  - [x] In `collections-ui.js`, add `skillsUrl(name)` → `/skills/${name}` alongside the existing URL builders (recon: `itemsUrl`/`addUrl`/etc. at `collections-ui.js:9-13`). This is the client seam for later UI work; no UI behavior change yet.
+- [x] **Task 5 — Wire tests + verify green** (AC: 6)
+  - [x] Add the test file (if new) to the `test` script; run `npm test`; confirm green + existing suites unaffected (the new route must not disturb the existing `/api/*` routes).
 
 ## Dev Notes
 
@@ -91,10 +91,29 @@ so that adding a capability needs no new bespoke route.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 162 pass / 0 fail (156 prior + 5 route + 1 skillsUrl). No `./data` pollution.
+
 ### Completion Notes List
 
+- ✅ All 7 ACs satisfied.
+- **One generic `POST /skills/:name` route** in `buildServer` (no per-capability routes). Flow: `registry.get(name)` → 404 if undefined; `inputSchema.safeParse` → 400 + zod `issues` (run NOT called); build ctx; `try run catch` → 500; `outputSchema.safeParse` → 500 if invalid; else return validated output. Distinct status classes: 400 (client input) ≠ 404 (unknown) ≠ 500 (run-throw / output-invalid). No stack/message leaked to the client body (generic messages; full detail logged server-side).
+- **Registry + ctx injection (AC6):** `buildServer({ registry, db, queue, logger, llm })` extended (Story 3.1 seam). Production defaults: fresh `createRegistry()` + `registerAllSkills`, `console` logger, `{ enqueueWrite }` queue, `disabledLlm` (Epic 4 selects the real provider). **ctx is built lazily inside the handler** so opt-less `buildServer()` callers that never hit `/skills` never open the real DB (kept tests pollution-free). `boardId` (not `collectionId`) resolved from the body when present.
+- **Existing `/api/*` routes untouched** — the skills route is purely additive.
+- **`skillsUrl(name)`** added to `collections-ui.js` (thin client seam, no UI behavior change) + a unit test.
+- **Hermetic tests:** fresh registry of fake skills + injected fake db/logger; asserts 200+output, 400+issues (run-count unchanged), 404, output-invalid 500, run-throws 500 with no stack leak.
+
 ### File List
+
+- `server.ts` (modified) — `BuildServerOptions` (registry/db/queue/logger/llm), the generic `/skills/:name` route, lazy ctx build.
+- `skills-route.test.ts` (new) — 5 route tests (200/400/404/500×2, hermetic).
+- `collections-ui.js` (modified) — `skillsUrl(name)` helper.
+- `collections-ui.test.ts` (modified) — `skillsUrl` test.
+- `package.json` (modified) — appended `skills-route.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 3.2 implemented: the one generic `/skills/:name` route (validate-in → run → validate-out) with distinct 400/404/500 classes and no stack leak; registry/ctx injected into buildServer; skillsUrl client seam. Status → review.

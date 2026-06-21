@@ -7,6 +7,7 @@ import {
   addUrl,
   refetchUrl,
   screenshotUrl,
+  skillsUrl,
   collectionChrome,
   libraryHaystack,
   matchesLibraryFilters,
@@ -45,6 +46,10 @@ test("resolveActiveCollection returns inspiration when collections is empty", ()
 test("itemsUrl builds correct path", () => {
   assert.equal(itemsUrl("inspiration"), "/api/collections/inspiration/items");
   assert.equal(itemsUrl("library"), "/api/collections/library/items");
+});
+
+test("skillsUrl builds the generic skill route path", () => {
+  assert.equal(skillsUrl("import-bookmarks"), "/skills/import-bookmarks");
 });
 
 test("itemUrl builds correct path", () => {

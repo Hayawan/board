@@ -11,6 +11,8 @@ export const itemUrl = (cid, id) => `/api/collections/${cid}/items/${id}`;
 export const addUrl = (cid) => `/api/collections/${cid}/items`;
 export const refetchUrl = (cid, id) => `/api/collections/${cid}/items/${id}/refetch`;
 export const screenshotUrl = (cid, id) => `/api/collections/${cid}/items/${id}/screenshot`;
+// Story 3.2: client seam for the generic skill route (no UI behavior change yet).
+export const skillsUrl = (name) => `/skills/${name}`;
 
 export function collectionChrome(collection) {
   const isInspiration = collection.type === "inspiration";

@@ -14,6 +14,10 @@ import {
   type CollectionMeta,
 } from "./storage.js";
 import { config, ensureDataDir, type Config } from "./config.js";
+import { getDb, type DbHandle } from "./db/index.js";
+import { enqueueWrite } from "./db/queue.js";
+import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
+import { buildCtx, disabledLlm, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -276,7 +280,18 @@ function handleScreenshot(
 
 // --- Server factory ---
 
-export async function buildServer(opts: { screenshotsDir?: string } = {}) {
+export interface BuildServerOptions {
+  screenshotsDir?: string;
+  /** Skill registry (Story 3.1 seam). Defaults to a fresh registry + registerAllSkills. */
+  registry?: SkillRegistry;
+  /** ctx collaborators — injectable for hermetic tests; production uses real defaults. */
+  db?: DbHandle;
+  queue?: JobQueue;
+  logger?: Logger;
+  llm?: LLMProvider;
+}
+
+export async function buildServer(opts: BuildServerOptions = {}) {
   // Story 2.2: screenshots resolve from DATA_DIR (config.screenshotsDir); tests
   // inject a temp dir so they never pollute the real data dir. The dir is created
   // at real boot via ensureDataDir() (the entrypoint), and handleScreenshot mkdirs
@@ -379,6 +394,63 @@ export async function buildServer(opts: { screenshotsDir?: string } = {}) {
   app.post<{ Params: { id: string }; Body: { dataUrl?: string } }>(
     "/api/bookmarks/:id/screenshot",
     async (req, reply) => handleScreenshot("inspiration", req.params.id, req.body, reply, screenshotsDir)
+  );
+
+  // --- Story 3.2: the ONE generic skill-invocation route (AD11/FR-19) ---
+  // Adding a capability = registering a Skill, not adding a bespoke route.
+  const registry = opts.registry ?? (() => {
+    const r = createRegistry();
+    registerAllSkills(r);
+    return r;
+  })();
+  const logger: Logger = opts.logger ?? console;
+  const queue: JobQueue = opts.queue ?? { enqueueWrite };
+  const llm: LLMProvider = opts.llm ?? disabledLlm; // Epic 4 selects the real provider
+
+  app.post<{ Params: { name: string }; Body: unknown }>(
+    "/skills/:name",
+    async (req, reply) => {
+      const skill = registry.get(req.params.name);
+      if (!skill) {
+        reply.status(404);
+        return { error: `Unknown skill: "${req.params.name}"` };
+      }
+
+      // Input validation = 400 (client error); run is NOT called on failure.
+      const parsedInput = skill.inputSchema.safeParse(req.body);
+      if (!parsedInput.success) {
+        reply.status(400);
+        return { error: "Invalid skill input", issues: parsedInput.error.issues };
+      }
+
+      // ctx is built lazily here (per request) so opt-less buildServer() callers
+      // that never hit /skills never open the real DB.
+      const boardId =
+        req.body && typeof req.body === "object" && "boardId" in req.body
+          ? String((req.body as { boardId?: unknown }).boardId)
+          : undefined;
+      const ctx = buildCtx({ db: opts.db ?? getDb(), queue, logger, llm, boardId });
+
+      let result: unknown;
+      try {
+        result = await skill.run(parsedInput.data, ctx);
+      } catch (err) {
+        // Skill bug / runtime failure = 500. Log server-side; never leak the
+        // stack/message to the client body.
+        logger.error(`skill "${skill.name}" threw: ${(err as Error).message}`);
+        reply.status(500);
+        return { error: "Skill execution failed" };
+      }
+
+      // Output validation = 500 (the skill is broken, distinct from the 400 case).
+      const parsedOutput = skill.outputSchema.safeParse(result);
+      if (!parsedOutput.success) {
+        logger.error(`skill "${skill.name}" produced invalid output`);
+        reply.status(500);
+        return { error: "Skill produced invalid output" };
+      }
+      return parsedOutput.data;
+    }
   );
 
   return app;
