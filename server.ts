@@ -17,6 +17,9 @@ import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
 import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
 import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
+import { listBoardItemsForUi, getItemForUi } from "./db/hydrate.js";
+import { addItemSkill } from "./skills/add-item.js";
+import { refetchItem } from "./enrichment/refetch.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
@@ -396,31 +399,70 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 
   // --- Collection-scoped item routes ---
 
+  // Story 8.x CUTOVER: these are now SQLite-backed (the running app reads/writes the
+  // SQLite store via the skills + item-actions built in Epics 1–10), presented to the
+  // unchanged frontend renderers through the hydration adapter (db/hydrate). The
+  // flat-JSON storage path is retired from the UI's data plane.
+
   app.get<{ Params: { cid: string } }>(
     "/api/collections/:cid/items",
-    async (req, reply) => handleGetItems(req.params.cid, reply)
+    async (req) => listBoardItemsForUi(opts.db ?? getDb(), req.params.cid)
   );
 
   app.post<{ Params: { cid: string }; Body: { url?: string; analysisAgent?: string } }>(
     "/api/collections/:cid/items",
-    async (req, reply) => handleAddItem(req.params.cid, req.body, reply)
+    async (req, reply) => {
+      const url = (req.body?.url ?? "").trim();
+      if (!url) { reply.status(400); return { error: "url is required" }; } // before getDb (no pollution)
+      const handle = opts.db ?? getDb();
+      const ctx = buildCtx({ db: handle, queue, logger, llm, boardId: req.params.cid });
+      try {
+        // add-item creates the pending item + (fire-and-forget) enqueues capture+enrich.
+        const { itemId } = await addItemSkill.run({ boardId: req.params.cid, source: url }, ctx);
+        // Return the optimistic pending item; SSE (Story 5.3) drives the live fill.
+        return getItemForUi(handle, itemId) ?? { id: itemId, url, status: "pending" };
+      } catch (err) {
+        reply.status(400);
+        return { error: (err as Error).message };
+      }
+    }
   );
 
   app.patch<{ Params: { cid: string; id: string }; Body: PatchBody }>(
     "/api/collections/:cid/items/:id",
-    async (req, reply) => handlePatchItem(req.params.cid, req.params.id, req.body, reply)
+    async (req, reply) => {
+      const handle = opts.db ?? getDb();
+      const updated = await patchItemFields(handle, req.params.id, (req.body ?? {}) as Record<string, unknown>);
+      if (!updated) { reply.status(404); return { error: "Not found" }; }
+      return getItemForUi(handle, req.params.id);
+    }
   );
 
   app.delete<{ Params: { cid: string; id: string } }>(
     "/api/collections/:cid/items/:id",
-    async (req, reply) => handleDeleteItem(req.params.cid, req.params.id, reply, screenshotsDir)
+    async (req, reply) => {
+      const handle = opts.db ?? getDb();
+      const res = await deleteItemWithAssets(handle, req.params.id, screenshotsDir);
+      if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
+      reply.status(204);
+      return null;
+    }
   );
 
   app.post<{ Params: { cid: string; id: string }; Body: { instructions?: string; analysisAgent?: string } }>(
     "/api/collections/:cid/items/:id/refetch",
-    async (req, reply) => handleRefetchItem(req.params.cid, req.params.id, req.body, reply)
+    async (req) => {
+      const handle = opts.db ?? getDb();
+      // Fire-and-forget refetch (capture+enrich); SSE drives the live update. Guarded
+      // so an unknown-item rejection can't crash the worker (Story 7.3 review).
+      void refetchItem(handle, { itemId: req.params.id, registry: captureRegistry, llm, screenshotsDir })
+        .catch((e) => logger.error(`refetch "${req.params.id}" failed to start: ${(e as Error).message}`));
+      return getItemForUi(handle, req.params.id) ?? { id: req.params.id, status: "processing" };
+    }
   );
 
+  // Manual screenshot upload stays on the legacy handler for now (the upload-asset
+  // skill is the SQLite path; wiring the UI's replace-screenshot to it is a follow-up).
   app.post<{ Params: { cid: string; id: string }; Body: { dataUrl?: string } }>(
     "/api/collections/:cid/items/:id/screenshot",
     async (req, reply) => handleScreenshot(req.params.cid, req.params.id, req.body, reply, screenshotsDir)

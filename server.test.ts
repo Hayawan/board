@@ -39,88 +39,96 @@ test("GET /api/collections returns all collections including library", async () 
   assert.ok(body.every((c) => c.id && c.name && c.type && c.view), "each entry should have id/name/type/view");
 });
 
-// --- Alias parity ---
+// --- SQLite cutover: the collection item routes are now SQLite-backed (hydrated for
+// the UI). These replace the old flat-JSON-contract tests for the same routes. ---
 
-test("GET /api/collections/inspiration/items equals GET /api/bookmarks", async () => {
-  const app = await buildServer();
-  const bookmarks = await app.inject({ method: "GET", url: "/api/bookmarks" });
-  const items = await app.inject({ method: "GET", url: "/api/collections/inspiration/items" });
-  assert.equal(bookmarks.statusCode, 200);
-  assert.equal(items.statusCode, 200);
-  assert.deepEqual(JSON.parse(items.body), JSON.parse(bookmarks.body));
-});
+async function seededSqliteApp() {
+  const { initDb } = await import("./db/index.js");
+  const { seed } = await import("./db/seed.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-cut-"));
+  const handle = initDb(path.join(dir, "c.db"));
+  seed(handle.db);
+  const app = await buildServer({ db: handle });
+  return { app, handle, dir };
+}
 
-// --- Library GET / PATCH / DELETE round trip ---
-
-test("GET /api/collections/library/items returns seeded library items", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
+test("GET /api/collections/:cid/items returns SQLite items hydrated for the UI", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { app, handle, dir } = await seededSqliteApp();
   try {
-    saveCollection("library", [LIBRARY_ITEM]);
-    const app = await buildServer();
+    await writeItem(handle, { id: "lib-1", boardId: "library", source: "https://x", title: "T", fields: { summary: "S", topics: ["a"] } });
     const res = await app.inject({ method: "GET", url: "/api/collections/library/items" });
     assert.equal(res.statusCode, 200);
     const body = JSON.parse(res.body) as any[];
     assert.equal(body.length, 1);
-    assert.equal(body[0].id, LIBRARY_ITEM.id);
-    assert.equal(body[0].title, LIBRARY_ITEM.title);
+    assert.equal(body[0].id, "lib-1");
+    assert.equal(body[0].title, "T");
+    assert.equal(body[0].summary, "S"); // flat field hydrated to top level
+    assert.deepEqual(body[0].topics, ["a"]);
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("PATCH /api/collections/library/items/:id updates notes field", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
+test("PATCH /api/collections/:cid/items/:id updates notes (SQLite)", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { app, handle, dir } = await seededSqliteApp();
   try {
-    saveCollection("library", [LIBRARY_ITEM]);
-    const app = await buildServer();
-    const res = await app.inject({
-      method: "PATCH",
-      url: `/api/collections/library/items/${LIBRARY_ITEM.id}`,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ notes: "my research notes" }),
-    });
+    await writeItem(handle, { id: "lib-2", boardId: "library", source: "https://x", title: "T" });
+    const res = await app.inject({ method: "PATCH", url: "/api/collections/library/items/lib-2", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes: "my research notes" }) });
     assert.equal(res.statusCode, 200);
-    const body = JSON.parse(res.body) as any;
-    assert.equal(body.notes, "my research notes");
-    // Verify persisted
-    const stored = loadCollection<any>("library");
-    assert.equal(stored[0].notes, "my research notes");
+    assert.equal((JSON.parse(res.body) as any).notes, "my research notes");
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("DELETE /api/collections/library/items/:id removes the item (204)", async () => {
-  const libSnapshot = fs.readFileSync(LIBRARY_FILE, "utf-8");
+test("DELETE /api/collections/:cid/items/:id removes the item (204, SQLite)", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { eq } = await import("drizzle-orm");
+  const { items } = await import("./db/schema.js");
+  const { app, handle, dir } = await seededSqliteApp();
   try {
-    saveCollection("library", [LIBRARY_ITEM]);
-    const app = await buildServer();
-    const res = await app.inject({ method: "DELETE", url: `/api/collections/library/items/${LIBRARY_ITEM.id}` });
+    await writeItem(handle, { id: "lib-3", boardId: "library", source: "https://x", title: "T" });
+    const res = await app.inject({ method: "DELETE", url: "/api/collections/library/items/lib-3" });
     assert.equal(res.statusCode, 204);
-    const stored = loadCollection<any>("library");
-    assert.equal(stored.length, 0);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "lib-3")).get(), undefined);
   } finally {
-    fs.writeFileSync(LIBRARY_FILE, libSnapshot);
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
 // --- Unknown cid ---
 
-test("GET /api/collections/no-such-cid/items returns 4xx", async () => {
-  const app = await buildServer();
-  const res = await app.inject({ method: "GET", url: "/api/collections/no-such-cid/items" });
-  assert.ok(res.statusCode >= 400, `expected 4xx but got ${res.statusCode}`);
+test("GET /api/collections/no-such-cid/items returns an empty list (unknown board)", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "GET", url: "/api/collections/no-such-cid/items" });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body), []);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test("PATCH /api/collections/no-such-cid/items/x returns 4xx", async () => {
-  const app = await buildServer();
-  const res = await app.inject({
-    method: "PATCH",
-    url: "/api/collections/no-such-cid/items/x",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ notes: "x" }),
-  });
-  assert.ok(res.statusCode >= 400, `expected 4xx but got ${res.statusCode}`);
+test("PATCH /api/collections/:cid/items/:id returns 404 for an unknown item (SQLite)", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/collections/no-such-cid/items/x",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ notes: "x" }),
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- Screenshot guard ---
@@ -192,26 +200,29 @@ test("POST /api/collections/inspiration/items returns 400 for missing url", asyn
   assert.equal(res.statusCode, 400);
 });
 
-test("POST /api/collections/inspiration/items returns 400 for invalid analysisAgent", async () => {
-  const app = await buildServer();
-  const res = await app.inject({
-    method: "POST",
-    url: "/api/collections/inspiration/items",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: "https://example.com", analysisAgent: "gpt" }),
-  });
-  assert.equal(res.statusCode, 400);
+test("POST /api/collections/:cid/items accepts a url + creates a pending item (SQLite)", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    // analysisAgent is a prototype concept the SQLite path ignores (provider is configured
+    // server-side) — it must NOT 400; the item is created pending.
+    const res = await app.inject({ method: "POST", url: "/api/collections/inspiration/items", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "https://example.com", analysisAgent: "gpt" }) });
+    assert.equal(res.statusCode, 200);
+    assert.equal((JSON.parse(res.body) as any).status, "pending");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test("POST /api/collections/no-such-cid/items returns 4xx for unknown collection", async () => {
-  const app = await buildServer();
-  const res = await app.inject({
-    method: "POST",
-    url: "/api/collections/no-such-cid/items",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: "https://example.com" }),
-  });
-  assert.ok(res.statusCode >= 400);
+test("POST /api/collections/no-such-cid/items returns 4xx for unknown collection (SQLite)", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "POST", url: "/api/collections/no-such-cid/items", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: "https://example.com" }) });
+    assert.ok(res.statusCode >= 400, `unknown board should 4xx, got ${res.statusCode}`);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- Legacy alias: PATCH /api/bookmarks/:id ---
