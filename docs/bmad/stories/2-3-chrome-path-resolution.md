@@ -1,6 +1,6 @@
 # Story 2.3: CHROME_PATH resolution + Linux autodetect
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,20 +31,20 @@ so that capture works off the macOS-only hardcoded path.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing resolver + laziness tests first (TDD)** (AC: 1, 2, 3, 4, 5)
-  - [ ] Create `browser.test.ts`: inject a fake `lookup` + `chromePath`; assert configured-wins, autodetect-order, and missing-throws-named-error (AC 4).
-  - [ ] Add the **laziness** test (AC 5): build/boot the server (or import `browser.ts`) with a no-Chrome environment and assert it does NOT throw; assert the named error only surfaces when the launch path (`launchBrowser()`) is invoked.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement `resolveChromePath` with a fully injectable lookup** (AC: 1, 2, 3)
-  - [ ] In `browser.ts`, replace the hardcoded `CHROME_PATH` const (`browser.ts:4`) with `resolveChromePath({ chromePath, lookup })` where `chromePath` is the configured value (or undefined) and `lookup(candidate)` is an injected predicate that resolves a candidate to an absolute path or null. It: returns `chromePath` if set; else tries candidates in order `["chromium","chromium-browser","google-chrome", <macOS default absolute>]` via `lookup`; else throws a named error telling the user to set `CHROME_PATH`.
-  - [ ] **The lookup must be injectable end-to-end** — bare names (`chromium`) need a PATH search, absolute defaults need an existence check. Do NOT split into "PATH for bare names, injected `exists` for absolutes" — that leaves the PATH branch hitting the real environment and makes AC 4 non-deterministic. Use ONE injected `lookup` (default impl = `which`-style PATH search + `existsSync` for absolutes; tests pass a fake `lookup`). 
-  - [ ] **The production call passes `config.CHROME_PATH`** (Story 2.1's resolved value) as `chromePath` — not a raw `process.env` read (that would reintroduce the scattered-env anti-pattern AC3 of Story 2.1 forbids). The `lookup`/`chromePath` injection is for tests.
-- [ ] **Task 3 — Resolve lazily at capture time, not at import/boot** (AC: 3)
-  - [ ] Ensure resolution happens when a capture launches Chrome, not at module load — so a box with no Chrome still boots and serves (NFR-4), and only capture surfaces the error. Both launch sites use it: `add.ts` screenshot launch (`add.ts:314-319`) and `browser.ts renderPageText` (`browser.ts:12-32`).
-- [ ] **Task 4 — Centralize the launch path in `launchBrowser()` (required — it's the laziness seam)** (AC: 1, 2, 5)
-  - [ ] The puppeteer launch options + `executablePath` are duplicated between `add.ts:315-319` and `browser.ts:16-20` (recon). Create a single `launchBrowser()` helper in `browser.ts` that both call. `resolveChromePath` is invoked **inside** `launchBrowser()` (at launch time), giving exactly one consumer and making AC 5 laziness testable: importing/booting touches no Chrome; only `launchBrowser()` resolves+throws. (Epic 6's CaptureAdapter consolidates further; this helper is the seam now.)
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing resolver + laziness tests first (TDD)** (AC: 1, 2, 3, 4, 5)
+  - [x] Create `browser.test.ts`: inject a fake `lookup` + `chromePath`; assert configured-wins, autodetect-order, and missing-throws-named-error (AC 4).
+  - [x] Add the **laziness** test (AC 5): build/boot the server (or import `browser.ts`) with a no-Chrome environment and assert it does NOT throw; assert the named error only surfaces when the launch path (`launchBrowser()`) is invoked.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement `resolveChromePath` with a fully injectable lookup** (AC: 1, 2, 3)
+  - [x] In `browser.ts`, replace the hardcoded `CHROME_PATH` const (`browser.ts:4`) with `resolveChromePath({ chromePath, lookup })` where `chromePath` is the configured value (or undefined) and `lookup(candidate)` is an injected predicate that resolves a candidate to an absolute path or null. It: returns `chromePath` if set; else tries candidates in order `["chromium","chromium-browser","google-chrome", <macOS default absolute>]` via `lookup`; else throws a named error telling the user to set `CHROME_PATH`.
+  - [x] **The lookup must be injectable end-to-end** — bare names (`chromium`) need a PATH search, absolute defaults need an existence check. Do NOT split into "PATH for bare names, injected `exists` for absolutes" — that leaves the PATH branch hitting the real environment and makes AC 4 non-deterministic. Use ONE injected `lookup` (default impl = `which`-style PATH search + `existsSync` for absolutes; tests pass a fake `lookup`). 
+  - [x] **The production call passes `config.CHROME_PATH`** (Story 2.1's resolved value) as `chromePath` — not a raw `process.env` read (that would reintroduce the scattered-env anti-pattern AC3 of Story 2.1 forbids). The `lookup`/`chromePath` injection is for tests.
+- [x] **Task 3 — Resolve lazily at capture time, not at import/boot** (AC: 3)
+  - [x] Ensure resolution happens when a capture launches Chrome, not at module load — so a box with no Chrome still boots and serves (NFR-4), and only capture surfaces the error. Both launch sites use it: `add.ts` screenshot launch (`add.ts:314-319`) and `browser.ts renderPageText` (`browser.ts:12-32`).
+- [x] **Task 4 — Centralize the launch path in `launchBrowser()` (required — it's the laziness seam)** (AC: 1, 2, 5)
+  - [x] The puppeteer launch options + `executablePath` are duplicated between `add.ts:315-319` and `browser.ts:16-20` (recon). Create a single `launchBrowser()` helper in `browser.ts` that both call. `resolveChromePath` is invoked **inside** `launchBrowser()` (at launch time), giving exactly one consumer and making AC 5 laziness testable: importing/booting touches no Chrome; only `launchBrowser()` resolves+throws. (Epic 6's CaptureAdapter consolidates further; this helper is the seam now.)
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -86,10 +86,29 @@ so that capture works off the macOS-only hardcoded path.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 146 pass / 0 fail (141 prior + 5 new browser tests).
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`resolveChromePath({ chromePath, lookup })`** in `browser.ts` replaces the hardcoded macOS const: configured `chromePath` wins (lookup not consulted); else probes `["chromium","chromium-browser","google-chrome", <macOS default>]` in order via a **single injected `lookup`**; else throws a clear `…Set CHROME_PATH…` error. Default lookup = `which`-style PATH search for bare names + `existsSync` for absolute paths (one lookup, fully injectable — no branch hits the real env when a fake is passed, so AC4 is deterministic).
+- **`launchBrowser(overrides?)`** is the single launch seam both capture paths use (`renderPageText` + `add.ts` `screenshot`). Resolution happens **inside** it (lazy), and BEFORE the puppeteer import — so importing `browser.ts`/booting the server with no Chrome does not throw (AC5), and the named error fires only when a capture actually launches. Production passes `config.chromePath` (not a raw `process.env` read).
+- **Launch args preserved** (`--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage`); `--disable-dev-shm-usage` kept for the small LXC.
+- **`add.ts`** now imports `launchBrowser` (not `CHROME_PATH`) and uses it in `screenshot`; the duplicated launch options are gone (single seam).
+- **Probe order = chromium first** (Debian LXC apt package), then google-chrome, then macOS default for dev — documented in `browser.ts`. Did NOT switch to full `puppeteer` (keeps the puppeteer-core → system-Chromium footprint).
+- **Tests:** env-wins (asserts lookup is NOT consulted), autodetect first-resolvable, probe-order (chromium wins when several resolve), none-found→named error, and the laziness test (launchBrowser rejects with the named error; module import doesn't throw). Real FS/PATH never probed.
+
 ### File List
+
+- `browser.ts` (modified) — `resolveChromePath` + `launchBrowser` seam; `renderPageText` uses it; macOS const removed.
+- `browser.test.ts` (new) — 5 tests (resolver 3 branches + order + laziness).
+- `add.ts` (modified) — import `launchBrowser`; `screenshot` uses the shared seam.
+- `package.json` (modified) — appended `browser.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 2.3 implemented: CHROME_PATH env + Linux autodetect via an injectable `resolveChromePath`, lazy resolution behind a single `launchBrowser()` seam (boot never blocks on missing Chrome). Status → review.

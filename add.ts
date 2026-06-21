@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { getCollection, mutateCollection, type CollectionMeta } from "./storage.js";
 import { registerProcessor, getProcessor, type Processor, type Captured } from "./processors.js";
 import "./processor-library.js"; // registers the library processor
-import { CHROME_PATH } from "./browser.js";
+import { launchBrowser } from "./browser.js";
 import { config } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -313,12 +313,8 @@ async function dismissOverlays(page: Awaited<ReturnType<import("puppeteer-core")
 async function screenshot(url: string, outputPath: string): Promise<string> {
   let browser: import("puppeteer-core").Browser | undefined;
   try {
-    const puppeteer = await import("puppeteer-core");
-    browser = await puppeteer.default.launch({
-      executablePath: CHROME_PATH,
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
+    // Story 2.3: launch via the shared seam (resolves CHROME_PATH lazily, autodetects).
+    browser = await launchBrowser();
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1.5 });
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
