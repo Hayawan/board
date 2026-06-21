@@ -8,12 +8,15 @@ import { eq } from 'drizzle-orm';
 
 import { initDb } from '../db/index.js';
 import { boards, assets, items } from '../db/schema.js';
+import { runItemJob, type TimeoutFn } from '../db/queue.js';
 import {
   createCaptureRegistry,
   dispatchCapture,
   runCaptureForItem,
   type CaptureAdapter,
 } from './adapter.js';
+
+const neverFires: TimeoutFn = () => () => {};
 
 const testAdapter: CaptureAdapter = {
   ingestMode: 'test',
@@ -101,5 +104,24 @@ describe('runCaptureForItem idempotency (Story 6.1)', () => {
     assert.equal(row?.title, 'Captured Title', 'title lifted to the system column');
     assert.equal((row?.fields as Record<string, unknown>).title, undefined, 'title not duplicated in fields');
     assert.equal((row?.fields as Record<string, unknown>).body, 'prose', 'non-system fields stay in fields');
+  });
+
+  // Regression: capture run INSIDE a worker job must NOT deadlock (writeItemDirect,
+  // not the enqueueing writeItem). Without the fix this hangs forever.
+  it('runs capture inside a worker job without deadlocking', async () => {
+    const reg = createCaptureRegistry();
+    reg.register({ ingestMode: 'test', fetch: async () => ({ fields: { body: 'injob' }, assets: [{ kind: 'shot', path: '/p.png' }] }) });
+    handle.db.insert(items).values({ id: 'job-it', boardId: 'tb', source: 'https://j.example' }).run();
+    const result = await runItemJob(handle, {
+      itemId: 'job-it',
+      type: 'capture',
+      timeoutMs: 60_000,
+      timeoutFn: neverFires,
+      work: (signal) => runCaptureForItem(handle, reg, { itemId: 'job-it', boardId: 'tb', source: 'https://j.example', signal }),
+    });
+    assert.equal(result.ok, true);
+    const row = handle.db.select().from(items).where(eq(items.id, 'job-it')).get();
+    assert.equal(row?.status, 'done');
+    assert.equal((row?.fields as Record<string, unknown>).body, 'injob');
   });
 });

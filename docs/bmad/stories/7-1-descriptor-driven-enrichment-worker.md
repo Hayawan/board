@@ -1,6 +1,6 @@
 # Story 7.1: Descriptor-driven enrichment worker
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -33,17 +33,17 @@ so that each board enriches through its own lens.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing enrichment tests first (TDD)** (AC: 1, 2, 3, 4, 5)
-  - [ ] Create `enrichment/worker.test.ts`: temp descriptor with a **novel** enrichable key (`foo_score: number`, in no prototype constant) + a user field (`notes`, `enrichable:false`). Capture the `schema` arg passed to the mock `complete`; assert it contains `foo_score`/`number` and NOT prototype keys (AC 5a). Mock returns `{ foo_score: 5, notes: "INJECTED" }`; assert `notes` NOT overwritten (AC 5b enrichable filter) + `foo_score` written + `search_blob` refreshed. Add: schema-violating output → item `error`; `disabledLlm` → `done`. Plus a pure `buildEnrichmentSchema(InspirationDescriptor)` test asserting the design/facets keys (AC 3).
-  - [ ] Run; confirm red is an **assertion failure against a stubbed module**, not a missing-import error.
-- [ ] **Task 2 — Build prompt + zod schema from the descriptor** (AC: 1)
-  - [ ] Create `enrichment/worker.ts`: `buildEnrichmentSchema(descriptor)` → a **zod** schema over the `enrichable:true` fields, mapping each closed type → zod type — **excluding `image`/asset-backed fields** (not LLM-emittable). `buildEnrichmentPrompt(descriptor, item)` → the prompt from `descriptor.enrichment_prompt` + the captured content (port the prototype's `buildAnalysisPrompt` shape, `add.ts:339-349`, incl. the untrusted-content guard). Both pure + unit-testable. (Note: `form`/`domain` map to `text` per Story 1.2's open-vocab decision — do NOT re-add a taxonomy enum constraint; that would reject novel values with a spurious `LLMSchemaError`.)
-- [ ] **Task 3 — Run the enrichment job (call provider, validate, write enrichable-only)** (AC: 2, 4)
-  - [ ] The enrichment job (on the Story 5.1 worker): `ctx.llm.complete(prompt, schema)` → validate against the descriptor's enrichable field types → write ONLY `enrichable` keys into `item.fields` via the typed item-write helper (so `search_blob`/FTS refresh, Story 1.4) → `status=done`. **Do NOT catch `EnrichmentDisabledError`** — let it propagate to Story 5.2's classifier (which resolves it to `done`); 5.2 owns that rule. Other errors propagate too → 5.2 maps `LLMSchemaError`/`LLMTransportError` → `error` + clean reason.
-- [ ] **Task 4 — Enqueue enrichment AFTER capture completes (hop 2 only)** (AC: 3)
-  - [ ] After a capture job (Epic 6) writes the item's captured fields + assets, enqueue the enrichment job for it (same worker). **This is the capture→enrich hop (hop 2) — 7.1 owns it.** The add-item→capture hop (hop 1) is wired in Story 6.1 Task 5 (Epic 6), NOT here — do not re-claim it. Skip enrichment when the provider is `disabledLlm` (it propagates `EnrichmentDisabledError` → `done` via 5.2, so it's safe to enqueue, but you may also short-circuit to `done` without a provider call).
-- [ ] **Task 5 — Wire tests + verify green** (AC: 5)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing enrichment tests first (TDD)** (AC: 1, 2, 3, 4, 5)
+  - [x] Create `enrichment/worker.test.ts`: temp descriptor with a **novel** enrichable key (`foo_score: number`, in no prototype constant) + a user field (`notes`, `enrichable:false`). Capture the `schema` arg passed to the mock `complete`; assert it contains `foo_score`/`number` and NOT prototype keys (AC 5a). Mock returns `{ foo_score: 5, notes: "INJECTED" }`; assert `notes` NOT overwritten (AC 5b enrichable filter) + `foo_score` written + `search_blob` refreshed. Add: schema-violating output → item `error`; `disabledLlm` → `done`. Plus a pure `buildEnrichmentSchema(InspirationDescriptor)` test asserting the design/facets keys (AC 3).
+  - [x] Run; confirm red is an **assertion failure against a stubbed module**, not a missing-import error.
+- [x] **Task 2 — Build prompt + zod schema from the descriptor** (AC: 1)
+  - [x] Create `enrichment/worker.ts`: `buildEnrichmentSchema(descriptor)` → a **zod** schema over the `enrichable:true` fields, mapping each closed type → zod type — **excluding `image`/asset-backed fields** (not LLM-emittable). `buildEnrichmentPrompt(descriptor, item)` → the prompt from `descriptor.enrichment_prompt` + the captured content (port the prototype's `buildAnalysisPrompt` shape, `add.ts:339-349`, incl. the untrusted-content guard). Both pure + unit-testable. (Note: `form`/`domain` map to `text` per Story 1.2's open-vocab decision — do NOT re-add a taxonomy enum constraint; that would reject novel values with a spurious `LLMSchemaError`.)
+- [x] **Task 3 — Run the enrichment job (call provider, validate, write enrichable-only)** (AC: 2, 4)
+  - [x] The enrichment job (on the Story 5.1 worker): `ctx.llm.complete(prompt, schema)` → validate against the descriptor's enrichable field types → write ONLY `enrichable` keys into `item.fields` via the typed item-write helper (so `search_blob`/FTS refresh, Story 1.4) → `status=done`. **Do NOT catch `EnrichmentDisabledError`** — let it propagate to Story 5.2's classifier (which resolves it to `done`); 5.2 owns that rule. Other errors propagate too → 5.2 maps `LLMSchemaError`/`LLMTransportError` → `error` + clean reason.
+- [x] **Task 4 — Enqueue enrichment AFTER capture completes (hop 2 only)** (AC: 3)
+  - [x] After a capture job (Epic 6) writes the item's captured fields + assets, enqueue the enrichment job for it (same worker). **This is the capture→enrich hop (hop 2) — 7.1 owns it.** The add-item→capture hop (hop 1) is wired in Story 6.1 Task 5 (Epic 6), NOT here — do not re-claim it. Skip enrichment when the provider is `disabledLlm` (it propagates `EnrichmentDisabledError` → `done` via 5.2, so it's safe to enqueue, but you may also short-circuit to `done` without a provider call).
+- [x] **Task 5 — Wire tests + verify green** (AC: 5)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -88,10 +88,32 @@ so that each board enriches through its own lens.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 254 pass / 0 fail (248 prior + 5 enrichment + 1 capture-in-job deadlock regression).
+- **Latent deadlock found + fixed:** `runCaptureForItem` (6.1) called the *enqueueing* `writeItem` while running inside a worker job (which already holds the `enqueueWrite` slot) → the inner enqueue waits for the outer slot, the outer awaits the inner → deadlock. Untested because tests called it directly / with an empty registry. Extracted `writeItemDirect` (no enqueue) for in-job callers; `writeItem` now wraps it. `runCaptureForItem` + enrichment use `writeItemDirect`; added a capture-in-job regression test.
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`buildEnrichmentSchema(descriptor)`** → a **zod** schema built FROM the descriptor's `enrichable:true` fields (closed type → zod), EXCLUDING `image` (not LLM-emittable) and non-enrichable fields; each field optional (partial responses validate). Proven on a NOVEL key (`foo_score:number`, in no prototype constant) — schema contains it, NOT the prototype keys (AD9 derivation, not a hardcoded `INSPIRATION_SCHEMA`). `form`/`domain` stay `text` (no re-added taxonomy enum, per 1.2).
+- **`buildEnrichmentPrompt`** = `descriptor.enrichment_prompt` + captured content (title/source/page text) wrapped in the prototype's untrusted-content guard.
+- **`runEnrichmentForItem`** calls `ctx.llm.complete(prompt, schema)`, then writes **ONLY** enrichable keys (defensively filtered to `enrichableTargets`, so a model returning extra/user keys like `notes` can't overwrite them) into `item.fields` via `writeItemDirect` → refreshes search_blob/FTS (proven: an enriched text field becomes FTS-searchable). User `notes` column untouched.
+- **Disabled → done (AC4):** `EnrichmentDisabledError` is NOT caught here — it propagates to Story 5.2's classifier → item `done` with empty enrichable fields (tested via `runItemJob` + `disabledLlm`). Other errors propagate → 5.2 maps to `error` + clean reason.
+- **Hop 2 wired (Task 4):** `add-item`'s capture job now runs capture THEN enrichment **inline in the one job**, so the item holds a single `processing` state until enriched (Story 5.3 "single persisted processing state" contract) rather than done→processing→done. (Hop 1, add-item→capture, was wired in 6.1.)
+
 ### File List
+
+- `enrichment/worker.ts` (new) — `buildEnrichmentSchema`, `buildEnrichmentPrompt`, `runEnrichmentForItem`.
+- `enrichment/worker.test.ts` (new) — 5 tests (schema-from-descriptor ×2, enrichable-only write + schema-capture, search_blob refresh, disabled→done).
+- `db/queue.ts` (modified) — extracted `writeItemDirect` (in-job, no enqueue); `writeItem` wraps it (fixes the capture-in-job deadlock).
+- `capture/adapter.ts` (modified) — `runCaptureForItem` uses `writeItemDirect`.
+- `capture/adapter.test.ts` (modified) — capture-in-job deadlock regression test.
+- `skills/add-item.ts` (modified) — capture job runs capture + enrichment inline (hop 2).
+- `package.json` (modified) — appended `enrichment/worker.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 7.1 implemented: descriptor-driven enrichment (buildEnrichmentSchema/Prompt + runEnrichmentForItem), enrichable-only write + search_blob refresh, disabled→done via 5.2, hop-2 capture→enrich wiring. Fixed a latent capture-in-job deadlock (writeItemDirect). Status → review.

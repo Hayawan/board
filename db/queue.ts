@@ -158,7 +158,18 @@ export function enqueueTransaction<T>(handle: DbHandle, fn: () => T): Promise<T>
  * callers from 1.4); an array (incl. `[]`) replaces them (idempotent re-import).
  */
 export function writeItem(handle: DbHandle, item: NewItem, itemAssets?: NewAsset[]): Promise<void> {
-  return enqueueTransaction(handle, () => {
+  return enqueueWrite(() => writeItemDirect(handle, item, itemAssets));
+}
+
+/**
+ * The DIRECT item write (transaction + search_blob + FTS + optional asset replace),
+ * with NO enqueue. MUST be called only from inside a job that already holds the
+ * worker slot (capture/enrichment work) — calling `writeItem` there would deadlock
+ * (the inner `enqueueWrite` waits for the outer slot, which awaits the inner). Other
+ * callers (importer, skills, routes) use `writeItem`, which wraps this in the queue.
+ */
+export function writeItemDirect(handle: DbHandle, item: NewItem, itemAssets?: NewAsset[]): void {
+  handle.sqlite.transaction(() => {
     const board = handle.db.select().from(boards).where(eq(boards.id, item.boardId)).get();
     const descriptor = (board?.descriptor as BoardDescriptor | undefined) ?? undefined;
     const searchBlob = buildSearchBlob(
@@ -181,7 +192,7 @@ export function writeItem(handle: DbHandle, item: NewItem, itemAssets?: NewAsset
       handle.db.delete(assets).where(eq(assets.itemId, item.id)).run();
       for (const a of itemAssets) handle.db.insert(assets).values(a).run();
     }
-  });
+  })();
 }
 
 // --- Story 5.2: item status lifecycle (pending → processing → done | error) ---

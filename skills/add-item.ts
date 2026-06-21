@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { boards } from '../db/schema.js';
 import { writeItem, runItemJob } from '../db/queue.js';
 import { captureRegistry, runCaptureForItem } from '../capture/adapter.js';
+import { runEnrichmentForItem } from '../enrichment/worker.js';
 import { config } from '../config.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 import { defineSkill } from './types.js';
@@ -57,15 +58,21 @@ export const addItemSkill = defineSkill(
         itemId,
         type: 'capture',
         timeoutMs: CAPTURE_TIMEOUT_MS,
-        work: (signal) =>
-          runCaptureForItem(ctx.db, captureRegistry, {
+        // Hop 1 (capture) THEN hop 2 (enrich) inline in ONE job, so the item holds a
+        // single `processing` state until enriched (Story 5.3 contract), not
+        // done→processing→done. Disabled/failed enrichment propagates to the 5.2
+        // classifier (disabled → done with the captured fields; other errors → error).
+        work: async (signal) => {
+          await runCaptureForItem(ctx.db, captureRegistry, {
             itemId,
             boardId: input.boardId,
             source,
             signal,
             screenshotsDir: config.screenshotsDir,
             registerTeardown: (fn) => { captureTeardown = fn; },
-          }),
+          });
+          await runEnrichmentForItem(ctx.db, { itemId, llm: ctx.llm, signal });
+        },
         teardown: async () => { if (captureTeardown) await captureTeardown(); },
       });
     }

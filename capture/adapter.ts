@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { boards, items, type NewAsset } from '../db/schema.js';
-import { writeItem } from '../db/queue.js';
+import { writeItemDirect } from '../db/queue.js';
 import { createUrlScreenshotAdapter } from './url-screenshot.js';
 import { createUrlReadableAdapter } from './url-readable.js';
 import { SYSTEM_COLUMNS, type BoardDescriptor } from '../descriptor/types.js';
@@ -165,8 +165,10 @@ export async function runCaptureForItem(
     hash: a.hash ?? null,
   }));
 
-  // writeItem replaces the item's assets (delete-then-insert) → idempotent re-capture.
-  await writeItem(
+  // Capture runs INSIDE the worker job (slot held) → use the DIRECT write (calling
+  // the enqueueing writeItem here would deadlock). Replaces the item's assets
+  // (delete-then-insert) → idempotent re-capture.
+  writeItemDirect(
     handle,
     { ...item, ...systemUpdates, id: args.itemId, boardId: args.boardId, fields: mergedFields },
     assetRows,
