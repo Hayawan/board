@@ -1751,7 +1751,7 @@
       ${item.screenshot ? `<img class="modal-screenshot" src="${shotSrc(item)}" alt="${esc(item.title || '')}">` : ''}
       <div class="modal-body">
         <div class="modal-title-row"><div class="modal-title">${esc(item.title || item.url || '')}</div></div>
-        ${item.url ? `<div class="modal-url"><a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.url)}</a> · ${esc(item.added || '')}</div>` : ''}
+        ${item.url ? `<div class="modal-url">${(rh.isSafeUrl && rh.isSafeUrl(item.url)) ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.url)}</a>` : `<span>${esc(item.url)}</span>`} · ${esc(item.added || '')}</div>` : ''}
         ${fieldHtml || '<div class="field-value" style="color:var(--text-2)">No analysis yet.</div>'}
         <div class="modal-footer">
           <button class="btn btn-ghost" id="modal-cancel">Close</button>
@@ -2386,8 +2386,8 @@
   window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries };
   // Story 7.2: generic descriptor-driven field renderer (Epic 8 wires it into the
   // descriptor-driven card/modal when the UI consumes the SQLite item model).
-  import { renderField, renderFields, renderAsset } from './descriptor/render-map.js';
-  window.renderHelpers = { renderField, renderFields, renderAsset };
+  import { renderField, renderFields, renderAsset, isSafeUrl } from './descriptor/render-map.js';
+  window.renderHelpers = { renderField, renderFields, renderAsset, isSafeUrl };
   load();
 </script>
 </body>

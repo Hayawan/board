@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderField, renderFields, renderAsset } from './render-map.js';
+import { renderField, renderFields, renderAsset, isSafeUrl } from './render-map.js';
 import type { BoardDescriptor, Field } from './types.js';
 
 const f = (key: string, type: Field['type'], extra: Partial<Field> = {}): Field => ({
@@ -73,6 +73,16 @@ describe('render-map (Story 7.2)', () => {
     assert.deepEqual(out.map((r) => r.key), ['summary', 'topics']); // author empty + missing absent skipped
     assert.match(out[0].html, /S/);
     assert.match(out[1].html, /chip/);
+  });
+
+  // isSafeUrl is exported + used by the modal's hand-rolled link (Story 8.1 review)
+  it('isSafeUrl allows http(s)/mailto/relative, blocks javascript:/data:', () => {
+    assert.equal(isSafeUrl('https://x.example'), true);
+    assert.equal(isSafeUrl('http://x'), true);
+    assert.equal(isSafeUrl('mailto:a@b.com'), true);
+    assert.equal(isSafeUrl('/relative'), true);
+    assert.equal(isSafeUrl('javascript:alert(1)'), false);
+    assert.equal(isSafeUrl('data:text/html,x'), false);
   });
 
   // AC 3 — assets render separately from descriptor fields

@@ -18,7 +18,7 @@ function escHtml(value) {
 // HTML-escaping is NOT enough for URL contexts: a `javascript:`/`data:`/`vbscript:`
 // scheme in href/src is XSS that escaping doesn't stop. Allow only http(s)/mailto
 // and site-relative paths; anything else is rendered as escaped text instead.
-function isSafeUrl(value) {
+export function isSafeUrl(value) {
   const s = String(value).trim();
   return /^https?:\/\//i.test(s) || /^mailto:/i.test(s) || s.startsWith("/");
 }
