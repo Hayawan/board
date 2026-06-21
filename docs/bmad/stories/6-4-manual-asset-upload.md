@@ -1,6 +1,6 @@
 # Story 6.4: Manual asset upload
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,16 +25,16 @@ so that I always have a graceful path.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing upload tests first (TDD)** (AC: 1, 2)
-  - [ ] Create/extend a test (`capture/manual-upload.test.ts` or `server.test.ts`): post an image (base64 dataURL or multipart, matching the prototype) for an item → assert the file lands under the temp `screenshotsDir` + the `asset` row is created/linked. Use an injected temp dir (per Story 2.2's seam).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement the item-scoped upload handler (asset-write op)** (AC: 1, 2)
-  - [ ] Port the prototype's manual-screenshot write (recon: `handleScreenshot` `server.ts:200`; body `{ dataUrl }` `server.ts:203`; regex `^data:image/[^;]+;base64,(.+)$` `server.ts:217`; `Buffer.from(m[1],"base64")` `server.ts:219`; `fs.writeFileSync` `server.ts:230`; stored `screenshot: relPath` `server.ts:233`). v1: decode the **base64 dataURL**, validate it's an image + within 20MB, write under `config.screenshotsDir` (Story 2.2), compute hash/dims, create an **`asset` row** linked to the item via the typed item-write helper. (Net-new vs the prototype, which only overwrote the item's `screenshot` column for an *existing* item — v1 creates a proper asset row.)
-  - [ ] Keep the stored `asset.path` relative (`screenshots/<id>.png`, Story 2.2 contract) so it serves via `/screenshots/`. Reject (no write) on non-image/oversized (AC 2).
-- [ ] **Task 3 — Expose it as an item-scoped route/skill (board-mode-agnostic)** (AC: 1)
-  - [ ] Either repoint the existing `POST /api/collections/:cid/items/:id/screenshot` (`server.ts:293`) at the new asset-write, or expose an item-scoped `upload-asset` skill (`POST /skills/:name` with `{itemId, dataUrl}`). It is item-scoped, NOT resolved by the board's `ingest_mode`. Document the choice. (Body-limit already 20MB, `server.ts:247`.)
-- [ ] **Task 4 — Wire tests + verify green** (AC: 2)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing upload tests first (TDD)** (AC: 1, 2)
+  - [x] Create/extend a test (`capture/manual-upload.test.ts` or `server.test.ts`): post an image (base64 dataURL or multipart, matching the prototype) for an item → assert the file lands under the temp `screenshotsDir` + the `asset` row is created/linked. Use an injected temp dir (per Story 2.2's seam).
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement the item-scoped upload handler (asset-write op)** (AC: 1, 2)
+  - [x] Port the prototype's manual-screenshot write (recon: `handleScreenshot` `server.ts:200`; body `{ dataUrl }` `server.ts:203`; regex `^data:image/[^;]+;base64,(.+)$` `server.ts:217`; `Buffer.from(m[1],"base64")` `server.ts:219`; `fs.writeFileSync` `server.ts:230`; stored `screenshot: relPath` `server.ts:233`). v1: decode the **base64 dataURL**, validate it's an image + within 20MB, write under `config.screenshotsDir` (Story 2.2), compute hash/dims, create an **`asset` row** linked to the item via the typed item-write helper. (Net-new vs the prototype, which only overwrote the item's `screenshot` column for an *existing* item — v1 creates a proper asset row.)
+  - [x] Keep the stored `asset.path` relative (`screenshots/<id>.png`, Story 2.2 contract) so it serves via `/screenshots/`. Reject (no write) on non-image/oversized (AC 2).
+- [x] **Task 3 — Expose it as an item-scoped route/skill (board-mode-agnostic)** (AC: 1)
+  - [x] Either repoint the existing `POST /api/collections/:cid/items/:id/screenshot` (`server.ts:293`) at the new asset-write, or expose an item-scoped `upload-asset` skill (`POST /skills/:name` with `{itemId, dataUrl}`). It is item-scoped, NOT resolved by the board's `ingest_mode`. Document the choice. (Body-limit already 20MB, `server.ts:247`.)
+- [x] **Task 4 — Wire tests + verify green** (AC: 2)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -75,10 +75,28 @@ so that I always have a graceful path.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 241 pass / 0 fail (235 prior + 6 new manual-upload tests). No pollution.
+
 ### Completion Notes List
 
+- ✅ All 3 ACs satisfied.
+- **Item-scoped, board-mode-agnostic (AC1):** manual upload is NOT routed through the ingest_mode dispatcher — `uploadAssetForItem(handle, {itemId, dataUrl, screenshotsDir})` works on ANY item (typically a `url-screenshot`/`url-readable` item whose auto-capture failed). No board seeds `manual-upload`, so no dispatcher adapter is needed (per AC1's note).
+- **base64 dataURL + validation (AC2):** `decodeImageDataUrl` validates `^data:image/...;base64,...`, decodes, and rejects (NO write) a non-image or oversized (>20MB) upload. Stores under `config.screenshotsDir` as a relative `screenshots/<itemId>.<ext>` path and creates a proper **`asset` row** via the typed item-write helper (item 0..n asset model) — replacing the item's asset (one image per item, no dup on re-upload), not a bare item column like the prototype.
+- **Exposed as the item-scoped `upload-asset` skill** (`POST /skills/upload-asset` with `{itemId, dataUrl}`) — registered in `registerAllSkills`. Chose a skill over repointing the flat-JSON screenshot route (which still serves the prototype path until Epic 8 cuts the UI to SQLite).
+- **Tests (AC3):** file written under the injected temp `screenshotsDir` (not the app tree) + asset row with path/kind/hash; re-upload replaces (no dup); non-image rejected with no file written; oversized rejected via an injected small limit.
+
 ### File List
+
+- `capture/manual-upload.ts` (new) — `decodeImageDataUrl` + `uploadAssetForItem`.
+- `capture/manual-upload.test.ts` (new) — 6 tests (decode validation ×3, upload+asset, replace, reject-no-write).
+- `skills/upload-asset.ts` (new) — the item-scoped upload skill.
+- `skills/registry.ts` (modified) — registers `upload-asset`.
+- `package.json` (modified) — appended the test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 6.4 implemented: item-scoped manual asset upload (decodeImageDataUrl + uploadAssetForItem) creating a proper asset row under screenshotsDir, exposed as the upload-asset skill. Status → review.
