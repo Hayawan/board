@@ -68,10 +68,12 @@ export function resolveChromePath(
 export async function launchBrowser(
   overrides?: { chromePath?: string | null; lookup?: ChromeLookup },
 ): Promise<import("puppeteer-core").Browser> {
-  const executablePath = resolveChromePath({
-    chromePath: overrides?.chromePath ?? config.chromePath,
-    lookup: overrides?.lookup,
-  });
+  // Honor an EXPLICIT chromePath override (incl. `null`) so tests are hermetic and
+  // independent of the ambient CHROME_PATH env. `??` would swallow an explicit null
+  // and fall back to config — reintroducing real-env dependence in tests.
+  const chromePath =
+    overrides && "chromePath" in overrides ? overrides.chromePath : config.chromePath;
+  const executablePath = resolveChromePath({ chromePath, lookup: overrides?.lookup });
   const puppeteer = await import("puppeteer-core");
   return puppeteer.default.launch({ executablePath, headless: true, args: LAUNCH_ARGS });
 }
