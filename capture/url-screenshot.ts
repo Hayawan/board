@@ -70,16 +70,18 @@ export function createUrlScreenshotAdapter(deps: Deps = {}): CaptureAdapter {
         throw new Error('url-screenshot adapter requires a URL source');
       }
       const url = source;
-      const browser = await launch();
-      // Story 6.5: memoized teardown — on abort (timeout) SIGKILL + await exit (a
-      // wedged page makes close() hang); else close(). Registered on ctx so the
-      // capture JOB awaits it before the worker launches the next capture.
-      const teardown = createBrowserTeardown(browser as unknown as TeardownBrowser, ctx.signal);
+      // Story 6.5: start the launch and register the memoized teardown around the
+      // PROMISE (before awaiting) so a timeout DURING launch still tears the browser
+      // down and the worker's gate isn't bypassed (launch-window race). On abort:
+      // SIGKILL + bounded await exit; else close().
+      const launchP = launch();
+      const teardown = createBrowserTeardown(launchP as unknown as Promise<TeardownBrowser>, ctx.signal);
       ctx.registerTeardown?.(teardown);
       const onAbort = () => { void teardown(); };
       ctx.signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
+        const browser = await launchP;
         const page = await browser.newPage();
         await page.setViewport(VIEWPORT);
         await page.goto(url, { waitUntil: 'networkidle2', timeout: GOTO_TIMEOUT_MS });

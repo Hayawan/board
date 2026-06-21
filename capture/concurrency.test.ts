@@ -93,6 +93,31 @@ describe('capture concurrency 1 (Story 6.5)', () => {
     await Promise.all([p1, p2]);
     assert.equal(launches, 2);
   });
+
+  // AC 1 (timeout path) — after a capture TIMES OUT, the next capture must not launch
+  // until the timed-out capture's teardown (kill + exit) completes.
+  it('does not launch the next capture until a timed-out capture teardown completes', async () => {
+    const t = manualTimeout();
+    const td = deferred(); // simulates kill+exit taking time
+    let nextLaunched = false;
+
+    const p1 = enqueueJob(
+      { type: 'capture', timeoutMs: 50, run: () => new Promise<void>(() => {}), teardown: async () => { await td.promise; } },
+      { timeoutFn: t.fn },
+    );
+    await tick();
+    t.fire();
+    await p1; // status resolved (timed out); the worker SLOT is held by teardown
+
+    void enqueueJob({ type: 'capture', timeoutMs: 60_000, run: async () => { nextLaunched = true; } }, { timeoutFn: neverFires });
+    await tick();
+    assert.equal(nextLaunched, false, 'next capture must wait for the timed-out teardown');
+
+    td.resolve();
+    await tick();
+    await tick();
+    assert.equal(nextLaunched, true, 'next capture runs once teardown completes');
+  });
 });
 
 describe('capture timeout → kill + error (Story 6.5)', () => {
