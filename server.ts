@@ -425,10 +425,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 
       // ctx is built lazily here (per request) so opt-less buildServer() callers
       // that never hit /skills never open the real DB.
-      const boardId =
-        req.body && typeof req.body === "object" && "boardId" in req.body
-          ? String((req.body as { boardId?: unknown }).boardId)
+      // Only accept a real string boardId; a null/numeric/missing value → undefined
+      // (don't coerce `null` to the string "null").
+      const rawBoardId =
+        req.body && typeof req.body === "object"
+          ? (req.body as { boardId?: unknown }).boardId
           : undefined;
+      const boardId = typeof rawBoardId === "string" && rawBoardId.length > 0 ? rawBoardId : undefined;
       const ctx = buildCtx({ db: opts.db ?? getDb(), queue, logger, llm, boardId });
 
       let result: unknown;
