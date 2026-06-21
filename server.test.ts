@@ -470,3 +470,51 @@ test("PATCH /api/boards/:id renames; DELETE /api/boards/:id cascades", async () 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- PATCH /api/boards/:id descriptor update (board field editor) ---
+
+test("PATCH /api/boards/:id updates the descriptor (valid) and 400s on invalid", async () => {
+  const { insertBoard } = await import("./db/seed.js");
+  const { boards } = await import("./db/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    insertBoard(handle.db, { id: "games", name: "Games", descriptor: { view: "grid", ingest_mode: "url-screenshot", enrichment_prompt: "", fields: [] } });
+    const good = { view: "list", ingest_mode: "url-readable", enrichment_prompt: "Catalog it.", fields: [{ key: "rating", label: "Rating", type: "number", enrichable: true, description: "1-10" }] };
+    const r = await app.inject({ method: "PATCH", url: "/api/boards/games", headers: { "content-type": "application/json" }, body: JSON.stringify({ descriptor: good }) });
+    assert.equal(r.statusCode, 200);
+    const stored = handle.db.select().from(boards).where(eq(boards.id, "games")).get();
+    assert.equal((stored?.descriptor as any).fields[0].description, "1-10");
+    assert.equal(stored?.view, "list", "view column synced from descriptor");
+    // invalid: off-list field type → 400, descriptor unchanged
+    const bad = { ...good, fields: [{ key: "x", label: "X", type: "boolean" }] };
+    const b = await app.inject({ method: "PATCH", url: "/api/boards/games", headers: { "content-type": "application/json" }, body: JSON.stringify({ descriptor: bad }) });
+    assert.equal(b.statusCode, 400);
+    assert.equal((handle.db.select().from(boards).where(eq(boards.id, "games")).get()?.descriptor as any).fields.length, 1, "unchanged after invalid");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- POST /api/boards/:id/reenrich (batch re-run AI) ---
+
+test("POST /api/boards/:id/reenrich queues all items; 404 for unknown board", async () => {
+  const { insertBoard } = await import("./db/seed.js");
+  const { writeItem } = await import("./db/queue.js");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    // no enrichable fields → enrichment is a fast no-op (deterministic, no LLM)
+    insertBoard(handle.db, { id: "rb", name: "RB", descriptor: { view: "grid", ingest_mode: "url-screenshot", enrichment_prompt: "", fields: [] } });
+    await writeItem(handle, { id: "r1", boardId: "rb", source: "https://a", title: "A" });
+    await writeItem(handle, { id: "r2", boardId: "rb", source: "https://b", title: "B" });
+    const r = await app.inject({ method: "POST", url: "/api/boards/rb/reenrich" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(JSON.parse(r.body).queued, 2);
+    assert.equal((await app.inject({ method: "POST", url: "/api/boards/ghost/reenrich" })).statusCode, 404);
+    await new Promise((res) => setTimeout(res, 60)); // let fire-and-forget no-op jobs drain before close
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

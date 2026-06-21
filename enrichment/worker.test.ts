@@ -12,7 +12,7 @@ import { boards, items } from '../db/schema.js';
 import { runItemJob, type TimeoutFn } from '../db/queue.js';
 import { disabledLlm, type LLMProvider } from '../skills/types.js';
 import { INSPIRATION_DESCRIPTOR } from '../db/seed.js';
-import { buildEnrichmentSchema, runEnrichmentForItem } from './worker.js';
+import { buildEnrichmentSchema, buildEnrichmentPrompt, runEnrichmentForItem } from './worker.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 
 const neverFires: TimeoutFn = () => () => {};
@@ -45,6 +45,23 @@ describe('buildEnrichmentSchema (Story 7.1)', () => {
     assert.ok('design.design_system_score' in shape);
     assert.ok('meta.audience' in shape);
     assert.ok(!('favorite_reason' in shape), 'enrichable:false field excluded');
+  });
+});
+
+describe('buildEnrichmentPrompt — per-field guidance', () => {
+  it('lists enrichable fields with their label + description as fill guidance', () => {
+    const descriptor: BoardDescriptor = {
+      view: 'grid', ingest_mode: 'url-screenshot', enrichment_prompt: 'Analyze it.',
+      fields: [
+        { key: 'weight', label: 'Complexity', type: 'number', enrichable: true, description: 'BGG weight 1-5' },
+        { key: 'mynote', label: 'My note', type: 'text', enrichable: false, description: 'private' },
+      ],
+    };
+    const prompt = buildEnrichmentPrompt(descriptor, { title: 'T', source: 'https://x', fields: {} });
+    assert.match(prompt, /Complexity/);
+    assert.match(prompt, /BGG weight 1-5/);
+    // a non-enrichable field's description must NOT be solicited (AI never fills it)
+    assert.doesNotMatch(prompt, /private/);
   });
 });
 

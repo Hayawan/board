@@ -57,6 +57,9 @@ const FieldSchema = z
     label: z.string().min(1, { message: 'field `label` is required' }),
     type: z.enum(FIELD_TYPES),
     enrichable: z.boolean().optional(),
+    // Optional per-field guidance: an AI hint (injected into the enrichment prompt so
+    // the LLM knows what this field should contain) that doubles as user-facing help.
+    description: z.string().optional(),
     // Required & non-empty only for `enum` (checked below).
     values: z.array(z.string()).optional(),
   })

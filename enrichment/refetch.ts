@@ -34,3 +34,29 @@ export async function refetchItem(
     timeoutFn: args.timeoutFn,
   });
 }
+
+/**
+ * Batch RE-ENRICH every item on a board (the "Re-run AI on all items" action after
+ * editing a board's fields). Enrich-ONLY — no re-capture (source omitted → the
+ * pipeline skips capture and re-runs enrichment over the already-captured content),
+ * so it's light and won't churn screenshots. Each item becomes its own queued job
+ * (status processing→done/error + SSE); user/non-enrichable fields survive by
+ * construction. Fire-and-forget for callers; `settled` is exposed for tests.
+ */
+export function reenrichBoardItems(
+  handle: DbHandle,
+  args: { boardId: string; llm: LLMProvider; registry: CaptureRegistry; timeoutFn?: TimeoutFn },
+): { queued: number; settled: Promise<unknown> } {
+  const rows = handle.db.select().from(items).where(eq(items.boardId, args.boardId)).all();
+  const jobs = rows.map((it) =>
+    runCaptureEnrichJob(handle, {
+      itemId: it.id,
+      boardId: it.boardId,
+      source: undefined, // enrich-only (no re-capture)
+      llm: args.llm,
+      registry: args.registry,
+      timeoutFn: args.timeoutFn,
+    }).catch((e) => e), // per-item failure is recorded as status=error by the job
+  );
+  return { queued: rows.length, settled: Promise.allSettled(jobs) };
+}

@@ -11,7 +11,7 @@ import { boards, assets, items } from '../db/schema.js';
 import { createCaptureRegistry } from '../capture/adapter.js';
 import type { LLMProvider } from '../skills/types.js';
 import type { TimeoutFn } from '../db/queue.js';
-import { refetchItem } from './refetch.js';
+import { refetchItem, reenrichBoardItems } from './refetch.js';
 
 const neverFires: TimeoutFn = () => () => {};
 
@@ -77,5 +77,39 @@ describe('refetch (Story 7.3)', () => {
     const registry = createCaptureRegistry();
     const llm: LLMProvider = { complete: async () => ({}) as never };
     await assert.rejects(() => refetchItem(handle, { itemId: 'nope', registry, llm, screenshotsDir: dir, timeoutFn: neverFires }), /item/i);
+  });
+});
+
+describe('reenrichBoardItems (batch re-run)', () => {
+  let dir: string;
+  let handle: ReturnType<typeof initDb>;
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'board-oss-reenrich-'));
+    handle = initDb(join(dir, 'r.db'));
+    handle.db.insert(boards).values({ id: 'b', name: 'B', view: 'grid', descriptor: DESCRIPTOR }).run();
+    handle.db.insert(items).values({ id: 'i1', boardId: 'b', source: 'https://a', title: 'A', notes: 'keep', fields: { text: 'page a', summary: 'old a' } }).run();
+    handle.db.insert(items).values({ id: 'i2', boardId: 'b', source: 'https://b', title: 'B', fields: { text: 'page b', summary: 'old b' } }).run();
+  });
+  after(() => { handle.sqlite.close(); rmSync(dir, { recursive: true, force: true }); });
+
+  it('re-enriches every item on the board WITHOUT re-capture, preserving user fields', async () => {
+    const registry = createCaptureRegistry(); // empty → would no-op capture anyway
+    const llm: LLMProvider = { complete: async () => ({ summary: 'NEW' }) as never };
+    const { queued, settled } = reenrichBoardItems(handle, { boardId: 'b', llm, registry, timeoutFn: neverFires });
+    assert.equal(queued, 2);
+    await settled;
+    const i1 = handle.db.select().from(items).where(eq(items.id, 'i1')).get();
+    assert.equal((i1?.fields as any).summary, 'NEW', 'enriched field refreshed');
+    assert.equal((i1?.fields as any).text, 'page a', 'captured content NOT re-fetched (preserved)');
+    assert.equal(i1?.notes, 'keep', 'user notes preserved');
+    assert.equal(i1?.status, 'done');
+  });
+
+  it('returns queued:0 for a board with no items', async () => {
+    const registry = createCaptureRegistry();
+    const llm: LLMProvider = { complete: async () => ({}) as never };
+    const { queued } = reenrichBoardItems(handle, { boardId: 'empty', llm, registry, timeoutFn: neverFires });
+    assert.equal(queued, 0);
   });
 });

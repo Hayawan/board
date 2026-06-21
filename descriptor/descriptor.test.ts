@@ -33,6 +33,20 @@ describe('descriptor schema (Story 1.2)', () => {
     assert.equal(d.ingest_mode, 'url-readable');
   });
 
+  // Per-field description (AI hint + visible help) — additive, optional.
+  it('accepts an optional per-field description and preserves it', () => {
+    const d = validateDescriptor({
+      ...validDescriptor,
+      fields: [{ key: 'rating', label: 'Rating', type: 'number', enrichable: true, description: 'BGG-style 1-10 score' }],
+    });
+    assert.equal(d.fields[0].description, 'BGG-style 1-10 score');
+  });
+
+  it('still accepts a field with no description', () => {
+    const d = validateDescriptor(validDescriptor);
+    assert.equal(d.fields[3].description, undefined);
+  });
+
   it('exposes exactly the closed field-type set', () => {
     assert.deepEqual(
       [...FIELD_TYPES].sort(),

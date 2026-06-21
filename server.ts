@@ -15,20 +15,21 @@ import {
 } from "./storage.js";
 import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
-import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
+import { enqueueWrite, enqueueTransaction, reconcileInterruptedItems } from "./db/queue.js";
+import { eq } from "drizzle-orm";
 import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
 import { listBoardItemsForUi, getItemForUi } from "./db/hydrate.js";
 import { renameBoard, deleteBoardCascade } from "./db/board-actions.js";
 import { boards as boardsTable } from "./db/schema.js";
 import { addItemSkill } from "./skills/add-item.js";
-import { refetchItem } from "./enrichment/refetch.js";
+import { refetchItem, reenrichBoardItems } from "./enrichment/refetch.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
-import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed } from "./db/seed.js";
+import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
 
 // Story 7.2: the seeded boards' descriptors, served on /api/collections for the
@@ -379,14 +380,34 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 
   // Board edit actions (the "Edit board" modal). Creation is via the compose-board /
   // create-board skills; these cover rename + delete-with-cascade.
-  app.patch<{ Params: { id: string }; Body: { name?: string } }>(
+  app.patch<{ Params: { id: string }; Body: { name?: string; descriptor?: unknown } }>(
     "/api/boards/:id",
     async (req, reply) => {
-      const name = (req.body?.name ?? "").trim();
-      if (!name) { reply.status(400); return { error: "name is required" }; }
+      const handle = opts.db ?? getDb();
+      const hasName = typeof req.body?.name === "string";
+      const hasDescriptor = req.body?.descriptor !== undefined;
+      if (!hasName && !hasDescriptor) { reply.status(400); return { error: "name or descriptor required" }; }
       try {
-        await renameBoard(opts.db ?? getDb(), req.params.id, name);
-        return { id: req.params.id, name };
+        // Descriptor first (validates; throws on off-list type etc. → 400). Single-writer.
+        if (hasDescriptor) {
+          try {
+            await enqueueTransaction(handle, () =>
+              updateBoardDescriptor(handle.db, req.params.id, req.body!.descriptor as BoardDescriptor)
+            );
+          } catch (err) {
+            const msg = (err as Error).message;
+            // unknown board → 404; validation failure → 400
+            reply.status(/unknown board/i.test(msg) ? 404 : 400);
+            return { error: msg };
+          }
+        }
+        if (hasName) {
+          const name = (req.body!.name ?? "").trim();
+          if (!name) { reply.status(400); return { error: "name is required" }; }
+          await renameBoard(handle, req.params.id, name);
+        }
+        const b = handle.db.select().from(boardsTable).where(eq(boardsTable.id, req.params.id)).get();
+        return { id: b?.id, name: b?.name, view: b?.view, descriptor: b?.descriptor };
       } catch (err) {
         reply.status(404);
         return { error: (err as Error).message };
@@ -397,6 +418,16 @@ export async function buildServer(opts: BuildServerOptions = {}) {
     const res = await deleteBoardCascade(opts.db ?? getDb(), req.params.id, screenshotsDir);
     if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
     return res;
+  });
+
+  // Batch re-run AI over a board's items (after editing fields). Enrich-only (no
+  // re-capture); fire-and-forget — SSE (Story 5.3) drives the live per-item updates.
+  app.post<{ Params: { id: string } }>("/api/boards/:id/reenrich", async (req, reply) => {
+    const handle = opts.db ?? getDb();
+    const board = handle.db.select().from(boardsTable).where(eq(boardsTable.id, req.params.id)).get();
+    if (!board) { reply.status(404); return { error: "Not found" }; }
+    const { queued } = reenrichBoardItems(handle, { boardId: req.params.id, llm, registry: captureRegistry });
+    return { queued };
   });
 
   // Story 11.1: PURE LIVENESS probe — a cheap 200 with NO DB check (a DB-reachable
