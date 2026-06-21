@@ -33,7 +33,13 @@ export interface Config {
   screenshotsDir: string;
   chromePath: string | null;
   provider: ProviderConfig;
-  /** false = no-AI (enrichment disabled) — the NFR-4 graceful default. */
+  /**
+   * Coarse "some provider knob is set" signal — the NFR-4 graceful default is false.
+   * NOT authoritative for "is AI actually usable": `selectProvider(config)` (Story
+   * 4.4) is the source of truth and degrades misconfig (unknown agent, base-URL
+   * without a model, key-only) to `disabledLlm` even though this is true. Status
+   * displays (Story 8.5) must reflect the selected provider, not this flag.
+   */
   providerEnabled: boolean;
 }
 
