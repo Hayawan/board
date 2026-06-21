@@ -316,3 +316,9 @@ test("renderEnrichmentState: populated done → no placeholder (empty string)", 
   const html = renderEnrichmentState({ id: "i", status: "done", fields: { summary: "real analysis" } }, ENRICH_DESCRIPTOR, { providerConfigured: false });
   assert.equal(html, "");
 });
+
+test("renderEnrichmentState: 'interrupted' (boot-reconcile reason) is shown, not genericized", () => {
+  const html = renderEnrichmentState({ id: "i", status: "error", errorReason: "interrupted" }, ENRICH_DESCRIPTOR, { providerConfigured: true });
+  assert.match(html, /interrupted/);
+  assert.doesNotMatch(html, /Couldn't analyze/);
+});

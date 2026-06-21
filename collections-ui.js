@@ -121,6 +121,7 @@ const SAFE_ERROR_REASONS = new Set([
   "AI returned invalid output",
   "timed out",
   "processing failed",
+  "interrupted", // reconcileInterruptedItems (boot sweep of stuck `processing`)
 ]);
 
 export function renderEnrichmentState(item, descriptor, opts = {}) {
