@@ -1,6 +1,6 @@
 # Story 1.4: FTS5 over a synthetic search_blob
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,21 +28,21 @@ so that full-text search works across an item's dynamic fields without per-field
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing FTS test first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `db/fts.test.ts`: temp DB; write items (via the Story 1.3 writer) whose `fields` contain known terms; assert `search_blob` is the expected concatenation; query the FTS5 table for a present term → item returned; query an absent term → empty.
-  - [ ] Add cases for **update** (changing a field updates the index) and **delete** (removing an item removes it from the index).
-  - [ ] Run; confirm red (no FTS table / no blob assembly yet).
-- [ ] **Task 2 — Add the FTS5 virtual table to the schema (raw SQL)** (AC: 2)
-  - [ ] Create the FTS5 virtual table over `search_blob` with **raw SQL** — `CREATE VIRTUAL TABLE … USING fts5(...)`. Drizzle cannot model FTS5 virtual tables or their sync triggers declaratively; do not hunt for a Drizzle-native FTS5 API. Link it to `item` via `item.id` as the external rowid/key (or content-table linkage) — pick and document the approach.
-  - [ ] Confirm the SQLite build (`better-sqlite3`) has FTS5 compiled in; assert availability at init with a clear, actionable error if not (Epic 11 packaging on Debian/LXC must ship an FTS5-enabled build).
-- [ ] **Task 3 — Implement search_blob assembly** (AC: 1)
-  - [ ] Create `db/search-blob.ts`: a pure function `buildSearchBlob(item, descriptor)` that concatenates the item's text-bearing fields. Use the descriptor (Story 1.2) to know which fields are text/tags/enum (searchable) vs binary/numeric — concatenate `title` + text/enum/tags fields + `notes`. Keep it descriptor-driven so new boards get search for free.
-  - [ ] Decide what is searchable: title, notes, and `enrichable`/text/tags/enum field values. Document the rule. (Architecture: "synthetic concat of enrichable/text fields".)
-- [ ] **Task 4 — Hook blob + FTS maintenance into the typed item-write helper** (AC: 1, 2)
-  - [ ] Story 1.3 established the single typed item-write choke-point (`writeItem`/`upsertItem`) and wrapped it in a transaction. **This story adds the body:** inside that helper, on insert/update recompute `search_blob` (via `buildSearchBlob`) and upsert the FTS row; on delete, remove the FTS row. Because it lives inside 1.3's transaction, the blob + FTS are atomic with the `item` row and never drift (a partway throw rolls back all three — covered by 1.3's atomicity AC).
-  - [ ] Do NOT scatter blob/FTS logic across call sites or put it in the generic `enqueueWrite(fn)` — it belongs in the one typed item-write helper so no future writer can forget it.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add `db/fts.test.ts` to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
+- [x] **Task 1 — Write the failing FTS test first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `db/fts.test.ts`: temp DB; write items (via the Story 1.3 writer) whose `fields` contain known terms; assert `search_blob` is the expected concatenation; query the FTS5 table for a present term → item returned; query an absent term → empty.
+  - [x] Add cases for **update** (changing a field updates the index) and **delete** (removing an item removes it from the index).
+  - [x] Run; confirm red (no FTS table / no blob assembly yet).
+- [x] **Task 2 — Add the FTS5 virtual table to the schema (raw SQL)** (AC: 2)
+  - [x] Create the FTS5 virtual table over `search_blob` with **raw SQL** — `CREATE VIRTUAL TABLE … USING fts5(...)`. Drizzle cannot model FTS5 virtual tables or their sync triggers declaratively; do not hunt for a Drizzle-native FTS5 API. Link it to `item` via `item.id` as the external rowid/key (or content-table linkage) — pick and document the approach.
+  - [x] Confirm the SQLite build (`better-sqlite3`) has FTS5 compiled in; assert availability at init with a clear, actionable error if not (Epic 11 packaging on Debian/LXC must ship an FTS5-enabled build).
+- [x] **Task 3 — Implement search_blob assembly** (AC: 1)
+  - [x] Create `db/search-blob.ts`: a pure function `buildSearchBlob(item, descriptor)` that concatenates the item's text-bearing fields. Use the descriptor (Story 1.2) to know which fields are text/tags/enum (searchable) vs binary/numeric — concatenate `title` + text/enum/tags fields + `notes`. Keep it descriptor-driven so new boards get search for free.
+  - [x] Decide what is searchable: title, notes, and `enrichable`/text/tags/enum field values. Document the rule. (Architecture: "synthetic concat of enrichable/text fields".)
+- [x] **Task 4 — Hook blob + FTS maintenance into the typed item-write helper** (AC: 1, 2)
+  - [x] Story 1.3 established the single typed item-write choke-point (`writeItem`/`upsertItem`) and wrapped it in a transaction. **This story adds the body:** inside that helper, on insert/update recompute `search_blob` (via `buildSearchBlob`) and upsert the FTS row; on delete, remove the FTS row. Because it lives inside 1.3's transaction, the blob + FTS are atomic with the `item` row and never drift (a partway throw rolls back all three — covered by 1.3's atomicity AC).
+  - [x] Do NOT scatter blob/FTS logic across call sites or put it in the generic `enqueueWrite(fn)` — it belongs in the one typed item-write helper so no future writer can forget it.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add `db/fts.test.ts` to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
 
 ## Dev Notes
 
@@ -99,10 +99,30 @@ so that full-text search works across an item's dynamic fields without per-field
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 123 pass / 0 fail (117 prior + 6 new: 2 pure buildSearchBlob + 4 FTS integration).
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied.
+- **FTS5 table** = `CREATE VIRTUAL TABLE IF NOT EXISTS item_fts USING fts5(item_id UNINDEXED, search_blob)` (raw SQL in `db/index.ts`). **Standalone** (not external-content) table chosen because `item.id` is TEXT (no clean integer-rowid linkage); `item_id` stored UNINDEXED for lookup, maintained by plain INSERT/DELETE keyed on it.
+- **FTS5 availability check:** the `CREATE VIRTUAL TABLE … fts5` exec is wrapped in try/catch that rethrows a clear, actionable error ("SQLite was built without FTS5…") — Epic 11 packaging must ship an FTS5-enabled build.
+- **`buildSearchBlob(item, descriptor?)`** (pure, `db/search-blob.ts`): always includes `title` + `notes`; descriptor-driven field selection — searchable types = `{text, tags, enum, url}`; `number`/`date`/`image` excluded. AC1 proven by asserting a number (`42`) and image path (`secretzzz`) do NOT appear in the blob/index. **Safe fallback** (no descriptor): concat every string / string-array value in `item.fields` (numbers skipped) — search never blocks a write.
+- **Transactional maintenance:** `writeItem` (the 1.3 choke-point) now recomputes `search_blob` from the board's descriptor and re-syncs the FTS row (delete-then-insert) *inside 1.3's transaction*, so item row + blob + FTS are atomic and cannot drift. Added `deleteItem(handle, id)` to remove item + FTS row atomically. The 1.3 NIT (id spread into the UPDATE set) is also fixed — `id` is now excluded from the `onConflictDoUpdate` set.
+- **Insert/update/delete index maintenance** all covered (update: stale term gone + new term present; delete: term gone + row gone). Hit + miss both asserted so the test can't pass by returning everything.
+- **Scope respected:** search route/UX is Story 9.1; this story builds only the index + maintenance. Per-field FTS columns deliberately NOT created (one synthetic blob = any board searchable with zero schema change).
+
 ### File List
+
+- `db/search-blob.ts` (new) — pure `buildSearchBlob` (descriptor-driven, with fallback).
+- `db/fts.test.ts` (new) — 2 pure + 4 integration tests (write→blob→FTS, update, delete, hit/miss).
+- `db/index.ts` (modified) — FTS5 virtual table DDL + availability check.
+- `db/queue.ts` (modified) — `writeItem` now assembles blob + syncs FTS in-transaction; added `deleteItem`; fixed id-in-update-set.
+- `package.json` (modified) — appended `db/fts.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 1.4 implemented: FTS5 over a synthetic search_blob, descriptor-driven blob assembly, transactional insert/update/delete index maintenance hooked into the writeItem choke-point. Status → review.

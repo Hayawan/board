@@ -62,6 +62,13 @@ CREATE INDEX IF NOT EXISTS idx_item_favorite ON item(favorite);
 CREATE INDEX IF NOT EXISTS idx_item_created_at ON item(created_at);
 `;
 
+// Story 1.4 — FTS5 over a SINGLE synthetic search_blob (not per-field columns), so
+// any descriptor-defined board is searchable with no schema change. Drizzle cannot
+// model FTS5 declaratively, so this is raw SQL. Standalone (not external-content)
+// table: `item_id` is stored UNINDEXED for lookup; the writer (db/queue.ts)
+// maintains it transactionally via plain INSERT/DELETE keyed on item_id.
+const FTS_SQL = `CREATE VIRTUAL TABLE IF NOT EXISTS item_fts USING fts5(item_id UNINDEXED, search_blob);`;
+
 export interface DbHandle {
   db: BetterSQLite3Database<typeof schema>;
   sqlite: Database.Database;
@@ -88,6 +95,16 @@ export function initDb(path: string): DbHandle {
   // (db/queue.ts) handles logical write ordering; both are needed.
   sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
   sqlite.exec(BOOTSTRAP_SQL);
+  // FTS5 is not in every SQLite build. Fail fast with an actionable message
+  // (Epic 11 packaging on Debian/LXC must ship an FTS5-enabled build).
+  try {
+    sqlite.exec(FTS_SQL);
+  } catch (err) {
+    throw new Error(
+      'SQLite was built without FTS5 (full-text search). Install an FTS5-enabled ' +
+        `SQLite/better-sqlite3 build. Underlying error: ${(err as Error).message}`,
+    );
+  }
   const db = drizzle(sqlite, { schema });
   return { db, sqlite };
 }

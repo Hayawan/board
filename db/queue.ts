@@ -1,4 +1,8 @@
-import { items, type NewItem } from './schema.js';
+import { eq } from 'drizzle-orm';
+
+import { boards, items, type NewItem } from './schema.js';
+import { buildSearchBlob } from './search-blob.js';
+import type { BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from './index.js';
 
 // Story 1.3 — the single-writer queue (write-safety spine).
@@ -45,20 +49,42 @@ export function enqueueTransaction<T>(handle: DbHandle, fn: () => T): Promise<T>
 
 /**
  * The single typed item-write choke-point. ALL item inserts/updates flow through
- * here, inside the serialized writer's transaction.
+ * here, inside the serialized writer's transaction. `item` is treated as the full
+ * desired state of the row (search_blob is recomputed from the fields provided).
  *
- * Story 1.4 owns adding `search_blob` assembly + FTS sync *inside this transaction*
- * — this is the one place to hook it so no call site can bypass it. 1.3 owns the
- * helper's existence + the transaction wrapper only.
+ * Inside the transaction it (1) upserts the item row, (2) recomputes `search_blob`
+ * from the board's descriptor (descriptor-driven; safe fallback if absent), and
+ * (3) re-syncs the FTS5 row. All three are atomic with each other — a partway throw
+ * rolls back all of them — so the index can never drift from the row.
  */
 export function writeItem(handle: DbHandle, item: NewItem): Promise<void> {
   return enqueueTransaction(handle, () => {
-    // Story 1.4: compute item.search_blob from the descriptor's text/enrichable
-    // fields + sync the FTS5 table here, within this transaction.
-    handle.db
-      .insert(items)
-      .values(item)
-      .onConflictDoUpdate({ target: items.id, set: { ...item } })
-      .run();
+    const board = handle.db.select().from(boards).where(eq(boards.id, item.boardId)).get();
+    const descriptor = (board?.descriptor as BoardDescriptor | undefined) ?? undefined;
+    const searchBlob = buildSearchBlob(
+      { title: item.title ?? null, notes: item.notes ?? null, fields: (item.fields as Record<string, unknown>) ?? null },
+      descriptor,
+    );
+
+    const row = { ...item, searchBlob };
+    const { id: _id, ...updatable } = row;
+    handle.db.insert(items).values(row).onConflictDoUpdate({ target: items.id, set: updatable }).run();
+
+    // Re-sync FTS5: delete any existing row for this item, then re-insert if the
+    // blob is non-empty. Keyed on item_id (UNINDEXED column on the standalone table).
+    handle.sqlite.prepare('DELETE FROM item_fts WHERE item_id = ?').run(item.id);
+    if (searchBlob.length > 0) {
+      handle.sqlite.prepare('INSERT INTO item_fts (item_id, search_blob) VALUES (?, ?)').run(item.id, searchBlob);
+    }
+  });
+}
+
+/**
+ * Delete an item and its FTS row atomically through the single writer.
+ */
+export function deleteItem(handle: DbHandle, id: string): Promise<void> {
+  return enqueueTransaction(handle, () => {
+    handle.db.delete(items).where(eq(items.id, id)).run();
+    handle.sqlite.prepare('DELETE FROM item_fts WHERE item_id = ?').run(id);
   });
 }
