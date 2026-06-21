@@ -27,7 +27,7 @@ export function selectView(descriptor) {
 // the SQLite item model (flat `item.fields[key]`, dotted keys) and the prototype
 // flat-JSON item (nested, e.g. key "meta.audience" → item.meta.audience; or a
 // top-level "summary"/"favorite_reason"). Returns undefined if absent.
-function getFieldValue(item, key) {
+export function getFieldValue(item, key) {
   if (item && item.fields && Object.prototype.hasOwnProperty.call(item.fields, key)) {
     return item.fields[key];
   }
