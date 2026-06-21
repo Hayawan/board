@@ -72,6 +72,16 @@ describe('single-writer queue (Story 1.3)', () => {
     assert.equal(row?.title, 'T');
   });
 
+  // AC 5 — the upsert UPDATE branch (the path Story 1.4 extends) updates in place.
+  it('writeItem upserts an existing item by id (update branch)', async () => {
+    await writeItem(handle, { id: 'wi-2', boardId: 'b', source: 'https://x', title: 'first' });
+    await writeItem(handle, { id: 'wi-2', boardId: 'b', source: 'https://y', title: 'second' });
+    const rows = handle.db.select().from(items).where(eq(items.id, 'wi-2')).all();
+    assert.equal(rows.length, 1, 'must update in place, not duplicate');
+    assert.equal(rows[0]?.title, 'second');
+    assert.equal(rows[0]?.source, 'https://y');
+  });
+
   // AC 2 — operations run one at a time (ordering observable)
   it('runs enqueued operations strictly one at a time', async () => {
     const order: string[] = [];
