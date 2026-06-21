@@ -1,0 +1,30 @@
+[
+  {
+    "id": "ragpaper-333",
+    "added": "2025-02-01",
+    "url": "https://arxiv.example/rag",
+    "title": "Cool RAG Paper",
+    "summary": "gribblesummary about retrieval augmented generation and why it matters",
+    "topics": ["ai", "rag", "retrieval"],
+    "author": "Jane Researcher",
+    "type": "paper",
+    "key_points": ["chunking strategy matters", "evaluation is hard"],
+    "analysis_agent": "claude",
+    "analysis_model": "claude-opus-4",
+    "notes": "revisit the eval section"
+  },
+  {
+    "id": "agentsdoc-444",
+    "added": "2025-04-10",
+    "url": "https://docs.example/agents",
+    "title": "Agents Docs",
+    "summary": "official documentation for building agents",
+    "topics": ["agents", "tools"],
+    "author": null,
+    "type": "doc",
+    "key_points": ["define tools clearly", "handle errors"],
+    "analysis_agent": "codex",
+    "analysis_model": null,
+    "notes": ""
+  }
+]

@@ -1,0 +1,70 @@
+[
+  {
+    "id": "acme-111",
+    "url": "https://acme.example",
+    "added": "2025-01-15",
+    "screenshot": "screenshots/acme-111.png",
+    "title": "Acme",
+    "meta": {
+      "audience": "b2b",
+      "form": "saas",
+      "domain": "ai",
+      "tier": "reference",
+      "tone": ["bold", "confident"],
+      "tags": ["dark-theme", "monospace"]
+    },
+    "design": {
+      "steal_this": "zqxwvdesign idea",
+      "above_fold": "big hero headline",
+      "nav_pattern": "sticky top nav",
+      "whitespace": "airy and balanced",
+      "color_story": "mono with accent",
+      "design_system_score": "systematic",
+      "typography_hierarchy": "two sizes one weight",
+      "scroll_behavior": "smooth reveal",
+      "cta_strategy": "repeated primary cta",
+      "social_proof": "logo wall"
+    },
+    "reflection": {
+      "five_second_message": "this is a dev tool",
+      "what_we_learn": "restraint reads as premium",
+      "apply_to_naruki": "use a calmer hero"
+    },
+    "favorite": true,
+    "favorite_reason": "great restraint"
+  },
+  {
+    "id": "beta-222",
+    "url": "https://beta.example",
+    "added": "2025-03-20",
+    "screenshot": "screenshots/beta-222.png",
+    "title": "Beta Studio",
+    "meta": {
+      "audience": "consumer",
+      "form": "portfolio",
+      "domain": "creative",
+      "tier": "polish",
+      "tone": ["playful"],
+      "tags": ["scroll-reveal"]
+    },
+    "design": {
+      "steal_this": "marquee headline",
+      "above_fold": "fullscreen video",
+      "nav_pattern": "hamburger",
+      "whitespace": "dense",
+      "color_story": "vivid gradients",
+      "design_system_score": "bespoke",
+      "typography_hierarchy": "many sizes",
+      "scroll_behavior": "parallax",
+      "cta_strategy": "single cta",
+      "social_proof": "press quotes"
+    },
+    "reflection": {
+      "five_second_message": "a creative studio",
+      "what_we_learn": "motion can carry a brand",
+      "apply_to_naruki": "add a subtle motion accent"
+    },
+    "favorite": false,
+    "favorite_reason": ""
+  }
+]

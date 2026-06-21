@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import { boards, items, type NewItem } from './schema.js';
+import { assets, boards, items, type NewAsset, type NewItem } from './schema.js';
 import { buildSearchBlob } from './search-blob.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from './index.js';
@@ -53,11 +53,15 @@ export function enqueueTransaction<T>(handle: DbHandle, fn: () => T): Promise<T>
  * desired state of the row (search_blob is recomputed from the fields provided).
  *
  * Inside the transaction it (1) upserts the item row, (2) recomputes `search_blob`
- * from the board's descriptor (descriptor-driven; safe fallback if absent), and
- * (3) re-syncs the FTS5 row. All three are atomic with each other — a partway throw
- * rolls back all of them — so the index can never drift from the row.
+ * from the board's descriptor (descriptor-driven; safe fallback if absent), (3)
+ * re-syncs the FTS5 row, and (4) — when `itemAssets` is provided — REPLACES the
+ * item's assets with that list. All steps are atomic with each other — a partway
+ * throw rolls back all of them — so the index can never drift from the row.
+ *
+ * `itemAssets` semantics: `undefined` leaves existing assets untouched (the FTS-only
+ * callers from 1.4); an array (incl. `[]`) replaces them (idempotent re-import).
  */
-export function writeItem(handle: DbHandle, item: NewItem): Promise<void> {
+export function writeItem(handle: DbHandle, item: NewItem, itemAssets?: NewAsset[]): Promise<void> {
   return enqueueTransaction(handle, () => {
     const board = handle.db.select().from(boards).where(eq(boards.id, item.boardId)).get();
     const descriptor = (board?.descriptor as BoardDescriptor | undefined) ?? undefined;
@@ -75,6 +79,11 @@ export function writeItem(handle: DbHandle, item: NewItem): Promise<void> {
     handle.sqlite.prepare('DELETE FROM item_fts WHERE item_id = ?').run(item.id);
     if (searchBlob.length > 0) {
       handle.sqlite.prepare('INSERT INTO item_fts (item_id, search_blob) VALUES (?, ?)').run(item.id, searchBlob);
+    }
+
+    if (itemAssets !== undefined) {
+      handle.db.delete(assets).where(eq(assets.itemId, item.id)).run();
+      for (const a of itemAssets) handle.db.insert(assets).values(a).run();
     }
   });
 }

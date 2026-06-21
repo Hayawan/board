@@ -1,6 +1,6 @@
 # Story 1.5: Flat-JSON → SQLite importer
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,25 +31,25 @@ so that I keep my data when the storage layer cuts over from flat JSON.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing importer test first (TDD)** (AC: 1, 2, 3, 4, 5)
-  - [ ] Create `db/importer.test.ts` with **small committed fixtures** (`db/__fixtures__/bookmarks.sample.json`, `library.sample.json`) — 2–3 records each, faithfully shaped to the real files (recon shapes below). Do NOT read the real 464KB `bookmarks.json` in tests.
-  - [ ] Temp seeded DB; run importer over fixtures; assert per-board counts, asset linkage (inspiration screenshot → asset row; library → none), FTS hit for a known term, idempotency on second run, and a sampled record's `fields` content.
-  - [ ] Run; confirm red (importer absent).
-- [ ] **Task 2 — Implement the record→item mapping** (AC: 1, 2)
-  - [ ] Create `db/importer.ts`: `importFlatJson({ inspirationPath, libraryPath, db })` (paths injectable for tests). For each file, resolve the target board (Inspiration/Library by stable id from Story 1.2), map each record:
+- [x] **Task 1 — Write the failing importer test first (TDD)** (AC: 1, 2, 3, 4, 5)
+  - [x] Create `db/importer.test.ts` with **small committed fixtures** (`db/__fixtures__/bookmarks.sample.json`, `library.sample.json`) — 2–3 records each, faithfully shaped to the real files (recon shapes below). Do NOT read the real 464KB `bookmarks.json` in tests.
+  - [x] Temp seeded DB; run importer over fixtures; assert per-board counts, asset linkage (inspiration screenshot → asset row; library → none), FTS hit for a known term, idempotency on second run, and a sampled record's `fields` content.
+  - [x] Run; confirm red (importer absent).
+- [x] **Task 2 — Implement the record→item mapping** (AC: 1, 2)
+  - [x] Create `db/importer.ts`: `importFlatJson({ inspirationPath, libraryPath, db })` (paths injectable for tests). For each file, resolve the target board (Inspiration/Library by stable id from Story 1.2), map each record:
     - **Inspiration** (`bookmarks.json` record `{id,url,added,screenshot,title,meta,design,reflection,favorite,favorite_reason}`): `source=url`, `title`, `favorite`, user `notes`/`favorite_reason`; `meta`+`design`+`reflection` → `item.fields` keyed to the Inspiration descriptor; `screenshot` → `asset`. Carry `added` into `created_at` if present.
     - **Library** (`library.json` record `{id,added,url,title,summary,topics,author,type,key_points,analysis_agent,analysis_model,notes}`): `source=url`, `title`, `notes`; `summary/topics/author/type/key_points` → `item.fields`; `analysis_agent`/`analysis_model` → `analysis_provider`/`analysis_model`.
-  - [ ] Preserve the original record `id` as the `item.id` (Story 1.1 makes `item.id` caller-suppliable TEXT) — its purpose is to be the **stable dedupe key** for idempotency (AC 4). (Asset paths like `screenshots/<id>.png` are stored verbatim in `asset.path` regardless of `item.id`, so preservation is about dedupe, not path validity.)
-- [ ] **Task 3 — Write through the single-writer path** (AC: 3)
-  - [ ] Insert items/assets via the Story 1.3 serialized writer so `search_blob` + FTS (Story 1.4) are maintained automatically. Do NOT bypass the writer with raw inserts (that would skip blob/FTS maintenance).
-- [ ] **Task 4 — Make it idempotent (item + FTS)** (AC: 4)
-  - [ ] Key on the preserved record `id` (Story 1.1's caller-suppliable `item.id`): skip or upsert on re-run. Document the chosen key. Re-running must not create a second `item` row.
-  - [ ] If using upsert, ensure the FTS row is also deduped (the typed item-write helper's upsert from 1.3/1.4 should handle this — verify the second run leaves FTS hit count == 1). This is the subtle failure mode the AC 4 test guards.
-- [ ] **Task 5 — Expose a board-agnostic per-record mapper (the seam Story 3.3 wraps)** (AC: 1)
-  - [ ] Structure `db/importer.ts` in two layers so 3.3 can reuse the mapping without forking it: (a) a **board-agnostic per-record mapper + insert** — e.g. `importRecords({ boardId, records, db })` (or `mapRecordToItem(record, boardId)` + an insert helper) that maps an in-memory record array into items under an arbitrary `boardId` and writes through the typed item-write helper; (b) the **file/board-resolution wrapper** `importFlatJson({ inspirationPath, libraryPath, db })` that reads the flat files, resolves the two seeded boards, and delegates to (a). Story 3.3's `import-bookmarks` skill calls layer (a) with an in-memory payload; the one-shot migration calls (b). This split is non-negotiable — without it, 3.3's `{boardId, bookmarks}` payload mode cannot wrap the mapping and would silently fork it.
-  - [ ] Expose the one-shot as a runnable (npm script `import:flat` or a small CLI). The *skill* wrapper (`import-bookmarks`, FR-20 part 2) is **Story 3.3**.
-- [ ] **Task 6 — Wire tests + verify green** (AC: 5)
-  - [ ] Add `db/importer.test.ts` to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
+  - [x] Preserve the original record `id` as the `item.id` (Story 1.1 makes `item.id` caller-suppliable TEXT) — its purpose is to be the **stable dedupe key** for idempotency (AC 4). (Asset paths like `screenshots/<id>.png` are stored verbatim in `asset.path` regardless of `item.id`, so preservation is about dedupe, not path validity.)
+- [x] **Task 3 — Write through the single-writer path** (AC: 3)
+  - [x] Insert items/assets via the Story 1.3 serialized writer so `search_blob` + FTS (Story 1.4) are maintained automatically. Do NOT bypass the writer with raw inserts (that would skip blob/FTS maintenance).
+- [x] **Task 4 — Make it idempotent (item + FTS)** (AC: 4)
+  - [x] Key on the preserved record `id` (Story 1.1's caller-suppliable `item.id`): skip or upsert on re-run. Document the chosen key. Re-running must not create a second `item` row.
+  - [x] If using upsert, ensure the FTS row is also deduped (the typed item-write helper's upsert from 1.3/1.4 should handle this — verify the second run leaves FTS hit count == 1). This is the subtle failure mode the AC 4 test guards.
+- [x] **Task 5 — Expose a board-agnostic per-record mapper (the seam Story 3.3 wraps)** (AC: 1)
+  - [x] Structure `db/importer.ts` in two layers so 3.3 can reuse the mapping without forking it: (a) a **board-agnostic per-record mapper + insert** — e.g. `importRecords({ boardId, records, db })` (or `mapRecordToItem(record, boardId)` + an insert helper) that maps an in-memory record array into items under an arbitrary `boardId` and writes through the typed item-write helper; (b) the **file/board-resolution wrapper** `importFlatJson({ inspirationPath, libraryPath, db })` that reads the flat files, resolves the two seeded boards, and delegates to (a). Story 3.3's `import-bookmarks` skill calls layer (a) with an in-memory payload; the one-shot migration calls (b). This split is non-negotiable — without it, 3.3's `{boardId, bookmarks}` payload mode cannot wrap the mapping and would silently fork it.
+  - [x] Expose the one-shot as a runnable (npm script `import:flat` or a small CLI). The *skill* wrapper (`import-bookmarks`, FR-20 part 2) is **Story 3.3**.
+- [x] **Task 6 — Wire tests + verify green** (AC: 5)
+  - [x] Add `db/importer.test.ts` to the `test` script; run `npm test`; confirm green + existing 7 suites unaffected.
 
 ## Dev Notes
 
@@ -102,10 +102,33 @@ so that I keep my data when the storage layer cuts over from flat JSON.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 130 pass / 0 fail (123 prior + 7 new importer tests).
+- **Real-data QA** (`npm run import:flat` over the actual git-ignored `bookmarks.json`/`library.json`): imported exactly **120 inspiration + 19 library** items (matches recon counts), 120 screenshot assets, 139 FTS rows; `MATCH 'design'` → 26 hits. Importer handles the full real dataset, not just fixtures.
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **Two-layer structure (Task 5, non-negotiable split):** `importRecords({ handle, boardId, records })` (board-agnostic mapper + insert, the seam Story 3.3's import-bookmarks skill wraps) and `importFlatJson({ handle, inspirationPath, libraryPath })` (file/board-resolution wrapper). A `MAPPERS` registry dispatches `inspiration`→`mapInspiration`, `library`→`mapLibrary`.
+- **Mapping:** Inspiration flattens nested `meta`/`design`/`reflection` into dotted keys (`meta.audience`, …) matching the 1.2 descriptor; `favorite`→`item.favorite` (system col), `notes`→`item.notes`, `favorite_reason`→`fields`; `screenshot`→ a linked `asset` (kind=screenshot). Library maps `summary/author/topics/type/key_points`→`fields`, `notes`→`item.notes`, `analysis_agent`/`analysis_model`→`analysis_provider`/`analysis_model`. `added` ("YYYY-MM-DD")→`created_at` (unix seconds).
+- **Writes through the 1.3/1.4 writer** (`writeItem`) so `search_blob` + FTS are maintained — proven by the FTS-hit assertions (importer items are searchable). No raw inserts.
+- **Idempotent at item AND FTS AND asset level:** keyed on the preserved record `id` (`item.id`). `writeItem` upserts the row, re-syncs FTS (delete-then-insert → FTS hit stays exactly 1, the subtle AC-4 trap), and **replaces** the item's assets (asset id = `${recordId}-screenshot`) — second run leaves item/asset counts unchanged. `writeItem` extended with an optional `itemAssets` param (undefined = leave assets; array = replace) so the 1.4 FTS-only callers are unaffected.
+- **Graceful on missing files (NFR-4):** `importFlatJson` skips absent files with a log line and no-ops (tested) — a fresh self-hoster with no prototype JSON boots clean.
+- **One-shot runnable:** `npm run import:flat` (`db/import-cli.ts`) seeds boards then imports `bookmarks.json`/`library.json` from cwd (overridable via env). The *skill* wrapper is Story 3.3.
+- **Fixtures committed** (`db/__fixtures__/bookmarks.sample.json`, `library.sample.json`, 2 records each) — faithfully shaped; the real 464KB file is never read in tests.
+
 ### File List
+
+- `db/importer.ts` (new) — two-layer importer (`importRecords` + `importFlatJson`) with per-board mappers.
+- `db/import-cli.ts` (new) — one-shot `import:flat` runner.
+- `db/__fixtures__/bookmarks.sample.json`, `db/__fixtures__/library.sample.json` (new) — committed test fixtures.
+- `db/importer.test.ts` (new) — 7 tests: counts, asset linkage, field fidelity, created_at, FTS hit, idempotency (item+asset+FTS), graceful absence.
+- `db/queue.ts` (modified) — `writeItem` gains optional atomic `itemAssets` replacement.
+- `package.json` (modified) — `import:flat` script + appended `db/importer.test.ts` to `test`.
+
+### Change Log
+
+- 2026-06-20 — Story 1.5 implemented: flat-JSON → SQLite importer (two-layer, idempotent at item/asset/FTS level, writes through the FTS-maintaining writer), validated against the real 120+19-record dataset. Epic 1 complete. Status → review.
