@@ -1,6 +1,6 @@
 # Story 4.2: HttpProvider (API key + open model)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,17 +31,17 @@ so that I can enrich via cloud or Ollama/LM-Studio with one code path.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing HttpProvider tests first (TDD)** (AC: 1, 3, 4, 5)
-  - [ ] Create `llm/http-provider.test.ts`: inject a fake `fetch`; assert the request URL/headers/body (schema embedded, model, auth header present); canned valid response → parsed object; canned bad response → typed error; run the **Story 4.1 conformance suite** against `HttpProvider` with the fake fetch.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement `HttpProvider`** (AC: 1, 2, 5)
-  - [ ] Create `llm/http-provider.ts`: `HttpProvider` implementing `LLMProvider`. Construct from `{ baseUrl, apiKey, model }` (from config, Story 2.1). `complete(prompt, schema)`: convert the zod schema to a JSON-schema (use zod's JSON-schema output or a small converter), build the OpenAI-compatible request (chat/completions with `response_format: json_schema` or tool-calling), `await fetch`, parse the body, `schema.parse` the structured output, throw the typed error on mismatch/transport failure.
-  - [ ] Inject `fetch` (default `globalThis.fetch`) so tests don't hit the network — mirror the prototype's injectable `fetchImpl` pattern (`processor-library.ts:136-137`).
-  - [ ] Keep the key out of logs (AC 5) — only in the `Authorization` header.
-- [ ] **Task 3 — Wire the zod→JSON-schema conversion** (AC: 1)
-  - [ ] Decide the conversion: zod's built-in JSON-schema (`z.toJSONSchema` in zod 4 / a converter lib in zod 3) — confirm which zod version Story 1.2 pinned and use the matching approach. Document. (The prototype hand-builds JSON-schemas as plain objects, e.g. `SCHEMA` `add.ts:61-130`; here the schema is a zod object from the descriptor in 7.1.)
-- [ ] **Task 4 — Wire tests + verify green** (AC: 3, 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + conformance passes + existing suites unaffected.
+- [x] **Task 1 — Write the failing HttpProvider tests first (TDD)** (AC: 1, 3, 4, 5)
+  - [x] Create `llm/http-provider.test.ts`: inject a fake `fetch`; assert the request URL/headers/body (schema embedded, model, auth header present); canned valid response → parsed object; canned bad response → typed error; run the **Story 4.1 conformance suite** against `HttpProvider` with the fake fetch.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement `HttpProvider`** (AC: 1, 2, 5)
+  - [x] Create `llm/http-provider.ts`: `HttpProvider` implementing `LLMProvider`. Construct from `{ baseUrl, apiKey, model }` (from config, Story 2.1). `complete(prompt, schema)`: convert the zod schema to a JSON-schema (use zod's JSON-schema output or a small converter), build the OpenAI-compatible request (chat/completions with `response_format: json_schema` or tool-calling), `await fetch`, parse the body, `schema.parse` the structured output, throw the typed error on mismatch/transport failure.
+  - [x] Inject `fetch` (default `globalThis.fetch`) so tests don't hit the network — mirror the prototype's injectable `fetchImpl` pattern (`processor-library.ts:136-137`).
+  - [x] Keep the key out of logs (AC 5) — only in the `Authorization` header.
+- [x] **Task 3 — Wire the zod→JSON-schema conversion** (AC: 1)
+  - [x] Decide the conversion: zod's built-in JSON-schema (`z.toJSONSchema` in zod 4 / a converter lib in zod 3) — confirm which zod version Story 1.2 pinned and use the matching approach. Document. (The prototype hand-builds JSON-schemas as plain objects, e.g. `SCHEMA` `add.ts:61-130`; here the schema is a zod object from the descriptor in 7.1.)
+- [x] **Task 4 — Wire tests + verify green** (AC: 3, 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + conformance passes + existing suites unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,28 @@ so that I can enrich via cloud or Ollama/LM-Studio with one code path.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 182 pass / 0 fail (176 prior + 6 new HttpProvider tests, incl. the conformance suite run against HttpProvider).
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`HttpProvider`** implements `LLMProvider` from `{ baseUrl, apiKey?, model, fetchImpl?, logger? }`. `complete` POSTs an OpenAI-compatible `/chat/completions` request with `response_format: { type: 'json_schema', json_schema: { schema: <converted>, strict } }`, reads `choices[0].message.content`, and revalidates via `parseStructuredOutput` (Story 4.1) → typed errors.
+- **Open model = config, not a subclass (AC2):** a keyless `http://localhost:11434/v1` base-URL goes through the SAME class; no `OllamaProvider`. Tested (no Authorization header when no key).
+- **zod→JSON-schema:** zod 3.25.76 has no built-in converter, so a minimal hand-rolled `zodToJsonSchema` covers the closed field-type subset (object/string/number/boolean/array/enum/optional/nullable) — best-effort, since the real guarantee is `parseStructuredOutput` revalidating the response. Avoids adding a dependency.
+- **Passes the shared conformance suite (AC3)** via a fake-fetch seam (`makeProviderReturning(raw)` → response whose content = raw) — the interchangeability proof.
+- **`fetch` injected** (default `globalThis.fetch`) — no network in tests; request shape (URL/auth/body/schema/model) asserted.
+- **Key never logged (AC5):** the key lives ONLY in the `Authorization` header. The transport-error path logs (url/status/message — no key), proven by a spy logger + a rejecting fetch + a grep that the key substring never appears. Transport failures → `LLMTransportError` (covers the gap the conformance suite can't, per the 4.1 note).
+
 ### File List
+
+- `llm/http-provider.ts` (new) — `HttpProvider` + `zodToJsonSchema`.
+- `llm/http-provider.test.ts` (new) — 6 tests (request shape, keyless local, schema-error, no-key-in-logs, conformance ×2).
+- `package.json` (modified) — appended the test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 4.2 implemented: OpenAI-compatible HttpProvider (one class for cloud + local open models), JSON-schema structured output + revalidation, injected fetch, key-never-logged, passes the shared conformance suite. Status → review.
