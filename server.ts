@@ -16,6 +16,7 @@ import {
 import { config, ensureDataDir, type Config } from "./config.js";
 import { getDb, type DbHandle } from "./db/index.js";
 import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
+import { patchItemFields, deleteItemWithAssets } from "./db/item-actions.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
@@ -341,6 +342,27 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // Optional ?boardId= scopes events to one board (the UI shows one at a time).
   app.get<{ Querystring: { boardId?: string } }>("/events", async (req, reply) => {
     startSseStream(req, reply, undefined, { boardId: req.query.boardId });
+  });
+
+  // Story 8.3: per-item curation actions on the SQLite store (board-agnostic, item
+  // -scoped). PATCH only user-owned fields (notes/favorite/enrichable:false); DELETE
+  // removes the item + asset rows + asset files. (REST, not skills — the v1 skill
+  // list excludes these.) ctx.db is built lazily so opt-less callers never open the DB.
+  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    "/api/items/:id",
+    async (req, reply) => {
+      const handle = opts.db ?? getDb();
+      const updated = await patchItemFields(handle, req.params.id, (req.body ?? {}) as Record<string, unknown>);
+      if (!updated) { reply.status(404); return { error: "Not found" }; }
+      return updated;
+    }
+  );
+  app.delete<{ Params: { id: string } }>("/api/items/:id", async (req, reply) => {
+    const handle = opts.db ?? getDb();
+    const res = await deleteItemWithAssets(handle, req.params.id, screenshotsDir);
+    if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
+    reply.status(204);
+    return null;
   });
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));

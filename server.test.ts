@@ -292,3 +292,29 @@ test("warnIfExposed warns on a non-localhost bind, stays silent on localhost", (
   warnIfExposed({ host: "localhost", port: 3141 }, logger);
   assert.equal(warns.length, 1, "::1 and localhost must not warn");
 });
+
+// --- Story 8.3: SQLite-backed per-item actions (REST) ---
+
+test("PATCH /api/items/:id updates notes (SQLite-backed, injected db)", async () => {
+  const { initDb } = await import("./db/index.js");
+  const { boards, items } = await import("./db/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-itemroute-"));
+  const handle = initDb(path.join(dir, "r.db"));
+  try {
+    handle.db.insert(boards).values({ id: "b", name: "B", view: "list", descriptor: { view: "list", ingest_mode: "url-readable", enrichment_prompt: "", fields: [] } }).run();
+    handle.db.insert(items).values({ id: "it", boardId: "b", source: "x" }).run();
+    const app = await buildServer({ db: handle });
+    const res = await app.inject({ method: "PATCH", url: "/api/items/it", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes: "hi" }) });
+    assert.equal(res.statusCode, 200);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get()?.notes, "hi");
+    const del = await app.inject({ method: "DELETE", url: "/api/items/it" });
+    assert.equal(del.statusCode, 204);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "it")).get(), undefined);
+    const missing = await app.inject({ method: "PATCH", url: "/api/items/nope", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(missing.statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

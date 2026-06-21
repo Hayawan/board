@@ -312,10 +312,13 @@ export function reconcileInterruptedItems(handle: DbHandle): number {
 }
 
 /**
- * Delete an item and its FTS row atomically through the single writer.
+ * Delete an item, its asset rows, and its FTS row atomically through the single
+ * writer. The `asset.item_id` FK has no ON DELETE CASCADE, so the asset rows MUST be
+ * removed first (else deleting an item that has assets fails the FK constraint).
  */
 export function deleteItem(handle: DbHandle, id: string): Promise<void> {
   return enqueueTransaction(handle, () => {
+    handle.db.delete(assets).where(eq(assets.itemId, id)).run();
     handle.db.delete(items).where(eq(items.id, id)).run();
     handle.sqlite.prepare('DELETE FROM item_fts WHERE item_id = ?').run(id);
   });

@@ -1,6 +1,6 @@
 # Story 8.3: Per-item actions (notes, favorite, delete)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,17 +31,17 @@ so that I can curate.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing action tests first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] In `server.test.ts`: seed an item (temp DB) with an asset; PATCH notes → assert persisted; PATCH favorite → assert toggled; DELETE → assert item gone AND its asset file removed from the temp `screenshotsDir`. (Snapshot/restore or temp DB so the suite stays clean.)
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement notes/favorite PATCH (allowlisted user fields)** (AC: 1, 2)
-  - [ ] Generalize the prototype's `handlePatchItem` (`server.ts:119`, allowlists reflection/favorite/favorite_reason/notes) to the v1 DB: PATCH updates the `enrichable:false` user fields on the item via the typed item-write helper (so `search_blob` refreshes — notes are searchable). Allowlist to user fields only (don't let a PATCH overwrite enriched/system fields).
-- [ ] **Task 3 — Implement delete + asset cleanup** (AC: 3)
-  - [ ] Generalize `handleDeleteItem` (`server.ts:151`, deletes the screenshot file only for `view:"grid"`). v1: delete the item row + cascade-delete its `asset` rows AND unlink the asset files from `screenshotsDir` (resolve via the relative path, Story 2.2). Do this for any board (not just grid) — any item may have an uploaded asset (Story 6.4). FK cascade (Story 1.1) handles the rows; the file unlink is explicit.
-- [ ] **Task 4 — Keep notes/favorite/delete as item REST endpoints** (AC: 1)
-  - [ ] Per architecture §4.1, the v1 skill list is FIXED (import-bookmarks, create-board, add-item, generate-fields, tag, compose-board) and does NOT include notes/favorite/delete — so these stay REST: `PATCH /api/collections/:cid/items/:id` (`server.ts:278`) + `DELETE` (`server.ts:283`), repointed at the v1 DB. (Tags go through the `tag` skill from Story 3.4.) Not a coin-flip — REST is correct here.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing action tests first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] In `server.test.ts`: seed an item (temp DB) with an asset; PATCH notes → assert persisted; PATCH favorite → assert toggled; DELETE → assert item gone AND its asset file removed from the temp `screenshotsDir`. (Snapshot/restore or temp DB so the suite stays clean.)
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement notes/favorite PATCH (allowlisted user fields)** (AC: 1, 2)
+  - [x] Generalize the prototype's `handlePatchItem` (`server.ts:119`, allowlists reflection/favorite/favorite_reason/notes) to the v1 DB: PATCH updates the `enrichable:false` user fields on the item via the typed item-write helper (so `search_blob` refreshes — notes are searchable). Allowlist to user fields only (don't let a PATCH overwrite enriched/system fields).
+- [x] **Task 3 — Implement delete + asset cleanup** (AC: 3)
+  - [x] Generalize `handleDeleteItem` (`server.ts:151`, deletes the screenshot file only for `view:"grid"`). v1: delete the item row + cascade-delete its `asset` rows AND unlink the asset files from `screenshotsDir` (resolve via the relative path, Story 2.2). Do this for any board (not just grid) — any item may have an uploaded asset (Story 6.4). FK cascade (Story 1.1) handles the rows; the file unlink is explicit.
+- [x] **Task 4 — Keep notes/favorite/delete as item REST endpoints** (AC: 1)
+  - [x] Per architecture §4.1, the v1 skill list is FIXED (import-bookmarks, create-board, add-item, generate-fields, tag, compose-board) and does NOT include notes/favorite/delete — so these stay REST: `PATCH /api/collections/:cid/items/:id` (`server.ts:278`) + `DELETE` (`server.ts:283`), repointed at the v1 DB. (Tags go through the `tag` skill from Story 3.4.) Not a coin-flip — REST is correct here.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,30 @@ so that I can curate.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 276 pass / 0 fail (269 prior + 6 item-actions + 1 route smoke). No pollution.
+- **Latent FK bug found + fixed:** `deleteItem` (1.4) deleted the item row but NOT its asset rows; the `asset.item_id` FK has no ON DELETE CASCADE, so deleting an item WITH assets would FK-fail. Untested (the fts delete test used an asset-less item). `deleteItem` now removes asset rows first; added a "delete item with assets" regression test.
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied (server-side, on the SQLite store). UI wiring of the actions is staged with the UI cutover (see scope).
+- **`patchItemFields(handle, itemId, patch)`** — PATCHes only user-owned fields: `notes`/`favorite` (system columns; favorite coerced to 0/1) + descriptor `enrichable:false` field keys (e.g. `favorite_reason`). Disallowed keys (status, enriched fields, unknown) are **silently ignored** (AC4, matching the prototype). Writes via the typed item-write helper so `search_blob` refreshes (proven: a patched note is FTS-searchable). Allowlist is descriptor-driven (generic).
+- **`deleteItemWithAssets(handle, itemId, screenshotsDir)`** — removes the item + asset rows (via the fixed `deleteItem`) AND unlinks the asset FILES under `screenshotsDir` (board-agnostic, NOT grid-only like the prototype — any item may have an uploaded asset, Story 6.4). Returns `{deleted, filesRemoved}`.
+- **REST routes** `PATCH /api/items/:id` + `DELETE /api/items/:id` (board-agnostic, item-scoped — not skills, per the fixed v1 skill list), using `opts.db ?? getDb()` (ctx built lazily → no test pollution). 404 on unknown item. Inject-tested.
+- **Scope honesty:** the SQLite-backed actions + routes are delivered + tested. Wiring the modal's notes/favorite editors + the card delete action to these routes (restoring the editing deferred from 8.1) is DOM, staged with the flat-JSON→SQLite UI cutover (Chrome offline → can't browser-verify). The existing flat-JSON PATCH/DELETE routes still serve the live UI until the cutover.
+
 ### File List
+
+- `db/item-actions.ts` (new) — `patchItemFields` + `deleteItemWithAssets`.
+- `db/item-actions.test.ts` (new) — 6 tests (notes+FTS, favorite toggle, user-field, disallowed ignored, delete+file-cleanup, delete-with-assets no-FK-fail).
+- `db/queue.ts` (modified) — `deleteItem` now removes asset rows (FK-bug fix).
+- `server.ts` (modified) — `PATCH`/`DELETE /api/items/:id` routes.
+- `server.test.ts` (modified) — route inject smoke (PATCH/DELETE/404).
+- `package.json` (modified) — appended `db/item-actions.test.ts`.
+
+### Change Log
+
+- 2026-06-20 — Story 8.3 implemented: SQLite per-item actions (patchItemFields allowlist, deleteItemWithAssets + file cleanup) + REST routes; fixed a latent deleteItem FK bug (asset rows). UI wiring staged. Status → review.
