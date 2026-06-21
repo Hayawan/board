@@ -19,6 +19,7 @@ import { enqueueWrite, reconcileInterruptedItems } from "./db/queue.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider } from "./llm/select-provider.js";
+import { startSseStream } from "./sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -324,6 +325,12 @@ export async function buildServer(opts: BuildServerOptions = {}) {
       ext === ".webp" ? "image/webp" : "application/octet-stream";
     reply.type(type);
     return reply.send(fs.createReadStream(abs));
+  });
+
+  // Story 5.3: live status stream (native SSE; poll fallback is the items API).
+  // Optional ?boardId= scopes events to one board (the UI shows one at a time).
+  app.get<{ Querystring: { boardId?: string } }>("/events", async (req, reply) => {
+    startSseStream(req, reply, undefined, { boardId: req.query.boardId });
   });
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));

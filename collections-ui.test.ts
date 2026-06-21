@@ -8,6 +8,7 @@ import {
   refetchUrl,
   screenshotUrl,
   skillsUrl,
+  eventsUrl,
   collectionChrome,
   libraryHaystack,
   matchesLibraryFilters,
@@ -50,6 +51,11 @@ test("itemsUrl builds correct path", () => {
 
 test("skillsUrl builds the generic skill route path", () => {
   assert.equal(skillsUrl("import-bookmarks"), "/skills/import-bookmarks");
+});
+
+test("eventsUrl builds the SSE path, optionally board-scoped", () => {
+  assert.equal(eventsUrl(), "/events");
+  assert.equal(eventsUrl("library"), "/events?boardId=library");
 });
 
 test("itemUrl builds correct path", () => {

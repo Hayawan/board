@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { assets, boards, items, type NewAsset, type NewItem } from './schema.js';
 import { buildSearchBlob } from './search-blob.js';
 import { EnrichmentDisabledError } from '../skills/types.js';
+import { statusHub } from '../sse.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from './index.js';
 
@@ -198,6 +199,19 @@ function setItemStatusDirect(handle: DbHandle, id: string, status: ItemStatus, e
     .set({ status, errorReason, updatedAt: sql`(unixepoch())` })
     .where(eq(items.id, id))
     .run();
+
+  // Story 5.3: publish the transition for live SSE. `fields` is included on `done`
+  // so the client renders the filled card without a refetch (8.4 contract).
+  const row = handle.db.select().from(items).where(eq(items.id, id)).get();
+  if (row) {
+    statusHub.publish({
+      itemId: id,
+      boardId: row.boardId,
+      status,
+      error_reason: errorReason ?? undefined,
+      fields: status === 'done' ? ((row.fields as Record<string, unknown>) ?? {}) : undefined,
+    });
+  }
 }
 
 /**

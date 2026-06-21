@@ -1359,6 +1359,29 @@
     if (activeCol?.type === 'inspiration') { buildFacetFilters(); buildTagCloud(); }
     applyCollectionChrome(activeCol);
     applyFilters();
+    subscribeToStatus();
+  }
+
+  // Story 5.3: live status via SSE. On a transition, refetch the active board
+  // (Story 8.4 makes this granular). EventSource auto-reconnects; if unsupported,
+  // the same load() is the poll fallback. Re-subscribe only when the board changes.
+  let statusSource = null;
+  let subscribedCid = null;
+  let statusReloadPending = false;
+  function subscribeToStatus() {
+    if (typeof EventSource === 'undefined') return;
+    if (statusSource && subscribedCid === activeCollection) return;
+    try {
+      if (statusSource) statusSource.close();
+      subscribedCid = activeCollection;
+      statusSource = new EventSource(window.collectionHelpers.eventsUrl(activeCollection));
+      statusSource.addEventListener('status', () => {
+        if (statusReloadPending) return;
+        statusReloadPending = true;
+        setTimeout(() => { statusReloadPending = false; load(); }, 200);
+      });
+      statusSource.onerror = () => { /* auto-reconnects; load() remains the fallback */ };
+    } catch { /* SSE unavailable — poll fallback (manual load) remains */ }
   }
 
   function renderSwitcher() {
@@ -2296,8 +2319,8 @@
   // load() is called by the module script below after collectionHelpers are initialized
 </script>
 <script type="module">
-  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, collectionChrome, matchesLibraryFilters, topicCounts } from './collections-ui.js';
-  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, collectionChrome, matchesLibraryFilters, topicCounts };
+  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts } from './collections-ui.js';
+  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts };
   load();
 </script>
 </body>

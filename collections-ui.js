@@ -13,6 +13,8 @@ export const refetchUrl = (cid, id) => `/api/collections/${cid}/items/${id}/refe
 export const screenshotUrl = (cid, id) => `/api/collections/${cid}/items/${id}/screenshot`;
 // Story 3.2: client seam for the generic skill route (no UI behavior change yet).
 export const skillsUrl = (name) => `/skills/${name}`;
+// Story 5.3: live status stream (optionally scoped to a board). Poll fallback = itemsUrl.
+export const eventsUrl = (cid) => (cid ? `/events?boardId=${encodeURIComponent(cid)}` : "/events");
 
 export function collectionChrome(collection) {
   const isInspiration = collection.type === "inspiration";
