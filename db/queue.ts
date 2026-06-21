@@ -38,6 +38,90 @@ export function enqueueWrite<T>(fn: () => T | Promise<T>): Promise<T> {
   return run;
 }
 
+// --- Story 5.1: the JOB layer on the SAME single worker ---
+//
+// Capture/enrichment jobs (Epics 6/7) run here, serially (concurrency 1), on the
+// SAME `tail` chain as writes — so a job holds the one worker slot for its full
+// duration (Chrome launch + LLM round-trip) and never overlaps another job OR a raw
+// write. This is also the SQLite single-writer guard (AD6) — one serializer, not two.
+//
+// Concurrency 1 is load-bearing: Chromium is ~400-520MB resident, so two concurrent
+// captures OOM the 512MB-1GB LXC (NFR-1/C1).
+
+/** A schedulable unit of work. `run` receives an AbortSignal it must honor. */
+export interface Job {
+  type: string;
+  timeoutMs: number;
+  run(signal: AbortSignal): Promise<void> | void;
+  /**
+   * Optional teardown awaited (after a timeout abort) BEFORE the worker releases the
+   * slot — the 5.1↔6.5 seam: a timed-out capture's browser must be force-closed
+   * (Story 6.5) and its memory released before the next memory-heavy job starts, so
+   * two Chromiums never coexist (AC3). Status is marked failed immediately; only the
+   * SLOT release waits on this.
+   */
+  teardown?: (signal: AbortSignal) => Promise<void>;
+}
+
+export interface JobResult {
+  type: string;
+  ok: boolean;
+  timedOut?: boolean;
+  error?: string;
+}
+
+/** Schedule a timeout; returns a cancel fn. Injectable for deterministic tests. */
+export type TimeoutFn = (cb: () => void, ms: number) => () => void;
+
+const defaultTimeoutFn: TimeoutFn = (cb, ms) => {
+  const t = setTimeout(cb, ms);
+  if (typeof t.unref === 'function') t.unref();
+  return () => clearTimeout(t);
+};
+
+/**
+ * Enqueue a job on the single worker. Returns its result (resolves when the job
+ * finishes, fails, or times out). On timeout: fires the AbortController signal,
+ * resolves the result as failed immediately, then holds the worker slot until the
+ * job's optional `teardown` completes (so the next job can't start until memory is
+ * released). Runs on the same serializer as `enqueueWrite` — concurrency 1.
+ */
+export function enqueueJob(job: Job, opts?: { timeoutFn?: TimeoutFn }): Promise<JobResult> {
+  const timeoutFn = opts?.timeoutFn ?? defaultTimeoutFn;
+  let resolveStatus!: (r: JobResult) => void;
+  const status = new Promise<JobResult>((r) => (resolveStatus = r));
+
+  enqueueWrite(async () => {
+    const controller = new AbortController();
+    let settled = false;
+
+    // Resolve with the job's outcome AND an optional teardown the slot must await.
+    const outcome = await new Promise<{ result: JobResult; teardown?: Promise<void> }>((resolve) => {
+      const cancel = timeoutFn(() => {
+        if (settled) return;
+        settled = true;
+        controller.abort();
+        resolve({
+          result: { type: job.type, ok: false, timedOut: true, error: `Job "${job.type}" timed out after ${job.timeoutMs}ms` },
+          teardown: job.teardown?.(controller.signal),
+        });
+      }, job.timeoutMs);
+
+      Promise.resolve()
+        .then(() => job.run(controller.signal))
+        .then(
+          () => { if (settled) return; settled = true; cancel(); resolve({ result: { type: job.type, ok: true } }); },
+          (err: unknown) => { if (settled) return; settled = true; cancel(); resolve({ result: { type: job.type, ok: false, error: String((err as Error)?.message ?? err) } }); },
+        );
+    });
+
+    resolveStatus(outcome.result); // mark failed/done immediately (status purpose)
+    if (outcome.teardown) await outcome.teardown; // SLOT held until memory released (AC3)
+  });
+
+  return status;
+}
+
 /**
  * Serialize an ATOMIC write: `fn` runs inside a single better-sqlite3 transaction,
  * so a partway throw rolls back every step (NFR-2). `fn` must be synchronous (the

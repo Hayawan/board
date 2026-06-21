@@ -1,6 +1,6 @@
 # Story 5.1: Single-writer worker queue (capture concurrency 1)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,19 +36,19 @@ so that capture concurrency is 1 (never OOMs a 512MB box) and writes stay single
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing worker tests first (TDD)** (AC: 1, 4, 5)
-  - [ ] Create `db/worker.test.ts`: instrumented jobs that **`await` a controllable deferred while holding the active slot** (so a parallel impl would be caught with active-count 2 — not a synchronous job that can never overlap); assert active-count never exceeds 1. Interleave an `enqueueWrite` with a job-write; assert combined active-count never > 1 (no second serializer). Enqueue a hung job with an **injected timer** (name the seam — `timeoutFn`/clock or `mock.timers`); assert the cancellation signal fired + marked failed + queue proceeds.
-  - [ ] Run; confirm red for the right reason.
-- [ ] **Task 2 — Extend the Story 1.3 worker into a job queue** (AC: 1, 3)
-  - [ ] In `db/queue.ts` (Story 1.3's single-writer worker), add a typed job API: `enqueueJob(job)` where a job is `{ type, run(ctx), timeoutMs }` (capture/enrichment job types come from Epics 6/7). The worker drains jobs serially — concurrency 1 — reusing the SAME serialized path as writes (the queue is the single-writer guard). Do NOT spin up a second worker/pool.
-  - [ ] Keep the generic `enqueueWrite` (1.3) and the typed item-write helper (1.3/1.4) working — jobs are a layer on the same worker, not a replacement.
-- [ ] **Task 3 — Add per-job timeout + cancellation signal (not a kill — that's 6.5)** (AC: 2, 3)
-  - [ ] Wrap each job run in a wall-clock timeout (injectable timer). On timeout: fire an `AbortController` signal passed into the job, abandon the job promise, mark it failed, proceed. The signal is the seam Epic 6's capture honors to force-close the browser (Story 6.5). 5.1 does not itself kill a process.
-  - [ ] **Name the proceed-ordering constraint (AC 3):** the worker must not start the next memory-heavy capture until the prior job's teardown has released its browser. The reconciliation with AC 2's "abandon the job promise": the JOB promise is abandoned for *status* purposes (mark failed immediately), but a SEPARATE `teardownComplete` handle (Story 6.5 exposes it, resolving on the browser process `exit`) gates launching the next *capture* specifically. Document this as the 5.1↔6.5 contract so two Chromiums never coexist.
-- [ ] **Task 4 — Replace the prototype's blocking spawn model (seam, not full migration)** (AC: 3)
-  - [ ] The prototype runs capture by **spawning `npx tsx add.ts` as a child and blocking on `close`** (recon: `spawnAddItem` `server.ts:60-92`, resolves on `proc.on("close")` `server.ts:76`). The v1 model is in-process jobs on this worker, not child-process spawning. This story establishes the in-process job worker; Epic 6 moves capture onto it. Do NOT rip out `spawnAddItem` here (it still serves the prototype path) — establish the worker + document the seam Epic 6 migrates to.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing worker tests first (TDD)** (AC: 1, 4, 5)
+  - [x] Create `db/worker.test.ts`: instrumented jobs that **`await` a controllable deferred while holding the active slot** (so a parallel impl would be caught with active-count 2 — not a synchronous job that can never overlap); assert active-count never exceeds 1. Interleave an `enqueueWrite` with a job-write; assert combined active-count never > 1 (no second serializer). Enqueue a hung job with an **injected timer** (name the seam — `timeoutFn`/clock or `mock.timers`); assert the cancellation signal fired + marked failed + queue proceeds.
+  - [x] Run; confirm red for the right reason.
+- [x] **Task 2 — Extend the Story 1.3 worker into a job queue** (AC: 1, 3)
+  - [x] In `db/queue.ts` (Story 1.3's single-writer worker), add a typed job API: `enqueueJob(job)` where a job is `{ type, run(ctx), timeoutMs }` (capture/enrichment job types come from Epics 6/7). The worker drains jobs serially — concurrency 1 — reusing the SAME serialized path as writes (the queue is the single-writer guard). Do NOT spin up a second worker/pool.
+  - [x] Keep the generic `enqueueWrite` (1.3) and the typed item-write helper (1.3/1.4) working — jobs are a layer on the same worker, not a replacement.
+- [x] **Task 3 — Add per-job timeout + cancellation signal (not a kill — that's 6.5)** (AC: 2, 3)
+  - [x] Wrap each job run in a wall-clock timeout (injectable timer). On timeout: fire an `AbortController` signal passed into the job, abandon the job promise, mark it failed, proceed. The signal is the seam Epic 6's capture honors to force-close the browser (Story 6.5). 5.1 does not itself kill a process.
+  - [x] **Name the proceed-ordering constraint (AC 3):** the worker must not start the next memory-heavy capture until the prior job's teardown has released its browser. The reconciliation with AC 2's "abandon the job promise": the JOB promise is abandoned for *status* purposes (mark failed immediately), but a SEPARATE `teardownComplete` handle (Story 6.5 exposes it, resolving on the browser process `exit`) gates launching the next *capture* specifically. Document this as the 5.1↔6.5 contract so two Chromiums never coexist.
+- [x] **Task 4 — Replace the prototype's blocking spawn model (seam, not full migration)** (AC: 3)
+  - [x] The prototype runs capture by **spawning `npx tsx add.ts` as a child and blocking on `close`** (recon: `spawnAddItem` `server.ts:60-92`, resolves on `proc.on("close")` `server.ts:76`). The v1 model is in-process jobs on this worker, not child-process spawning. This story establishes the in-process job worker; Epic 6 moves capture onto it. Do NOT rip out `spawnAddItem` here (it still serves the prototype path) — establish the worker + document the seam Epic 6 migrates to.
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -91,10 +91,28 @@ so that capture concurrency is 1 (never OOMs a 512MB box) and writes stay single
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 210 pass / 0 fail (206 prior + 4 new worker tests).
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`enqueueJob(job, { timeoutFn? })`** added to `db/queue.ts` — the job layer on the SAME `enqueueWrite` chain, so jobs run serially (concurrency 1) AND serialize against raw writes (one serializer, not two — AC1/AC4). A job holds the single slot for its full duration. Documented worker-occupancy tradeoff (a long capture occupies the slot; interactive `enqueueWrite` notes/favorite still serialize on the same worker).
+- **Per-job timeout (AC2):** an injectable `timeoutFn` (default `setTimeout`, unref'd; tests inject a manual-fire fn — no real clock) fires an `AbortController` signal the job honors, resolves the status as failed immediately, and proceeds. 5.1 fires the signal + abandons + marks-failed; the actual Chrome force-close is Story 6.5 (which honors the signal).
+- **Teardown ordering (AC3, the 5.1↔6.5 seam):** status is marked failed immediately, but the worker SLOT is held until the job's optional `teardown(signal)` resolves — so the next memory-heavy capture can't start until the timed-out one's browser is released (two Chromiums never coexist). Tested: next job doesn't start until the teardown deferred resolves.
+- **Reuses the 1.3 write path (AC4):** jobs that write go through `writeItem`/`enqueueWrite` on the same worker. `enqueueWrite`/`enqueueTransaction`/`writeItem` unchanged.
+- **Scope:** no status lifecycle (5.2) or SSE (5.3) here. The prototype's `spawnAddItem` child-process model left intact (Epic 6 migrates capture onto this worker) — documented seam, not ripped out.
+- **Tests (AC5):** serial proof uses an instrumented job that awaits a deferred while holding the slot (a parallel impl would hit active-count 2); no-double-serializer interleaves `enqueueWrite` + a job (combined active ≤ 1); timeout via injected fire → abort + failed + proceeds; teardown gates the next job.
+
 ### File List
+
+- `db/queue.ts` (modified) — `Job`/`JobResult`/`TimeoutFn` types + `enqueueJob` (concurrency-1, timeout+abort, teardown-gated slot release).
+- `db/worker.test.ts` (new) — 4 tests (serial, no-double-serializer, timeout, teardown ordering).
+- `package.json` (modified) — appended `db/worker.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 5.1 implemented: in-process job worker (enqueueJob) on the single-writer chain — concurrency 1, per-job abort-timeout, teardown-gated slot release (5.1↔6.5 seam). Status → review.
