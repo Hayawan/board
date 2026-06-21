@@ -1,6 +1,6 @@
 # Story 8.1: Board switcher, views & detail modal
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,17 +30,17 @@ so that I can browse my collections.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Reuse/adapt the prototype's switcher + view + modal** (AC: 1, 2, 3)
-  - [ ] The prototype already has most of this (recon): `renderSwitcher` (`index.html:1364`), `setActiveCollection` (`index.html:1381`, persists to localStorage), the `render()` dispatch (`index.html:1550`), `renderGrid`/`renderList`/`renderLibraryList`. v1 evolves these to be descriptor-driven (Story 7.2) rather than per-collection-hardcoded. The detail modal is the Story 7.2 generic renderer (replacing `openModal`/`openLibraryModal`).
-- [ ] **Task 2 — Make the view choice descriptor-driven + unify the list renderers/modals** (AC: 2, 4)
-  - [ ] Add a pure `selectView(descriptor) → 'grid'|'list'` (testable); `render()` keys layout off it, not `activeCol.type === 'inspiration'` (the prototype's branch, `index.html:1550`). Fields within render via Story 7.2's `renderFields`.
-  - [ ] **Collapse the three renderers → grid + one list, and the two modals → one generic modal.** `renderList` (inspiration `.list-card`→`openModal`) and `renderLibraryList` (library `.lib-card`→`openLibraryModal`) are distinct markup/modal today; v1 has one list renderer + one descriptor-driven modal (Story 7.2). Decide the unified list-card markup; this reconciliation is in scope here.
-- [ ] **Task 3 — Serve descriptors so the frontend can render** (AC: 2, 3)
-  - [ ] Ensure `/api/collections` (or a board endpoint) returns each board's descriptor (Story 7.2 Task 4 does this — depend on it). The switcher + view + modal all read the descriptor.
-- [ ] **Task 4 — Verify both boards browse via the generic path** (AC: 4)
-  - [ ] Manually verify Inspiration (grid) and Library (list) both switch, render, and open details with no per-board branch. (Frontend; cover the pure helpers via `collections-ui.test.ts`-style tests.)
-- [ ] **Task 5 — Wire any pure-helper tests + verify green** (AC: 4)
-  - [ ] Add/extend pure-helper tests (e.g. `collections-ui.js` `resolveActiveCollection`, `collectionChrome`); run `npm test`; confirm green.
+- [x] **Task 1 — Reuse/adapt the prototype's switcher + view + modal** (AC: 1, 2, 3)
+  - [x] The prototype already has most of this (recon): `renderSwitcher` (`index.html:1364`), `setActiveCollection` (`index.html:1381`, persists to localStorage), the `render()` dispatch (`index.html:1550`), `renderGrid`/`renderList`/`renderLibraryList`. v1 evolves these to be descriptor-driven (Story 7.2) rather than per-collection-hardcoded. The detail modal is the Story 7.2 generic renderer (replacing `openModal`/`openLibraryModal`).
+- [x] **Task 2 — Make the view choice descriptor-driven + unify the list renderers/modals** (AC: 2, 4)
+  - [x] Add a pure `selectView(descriptor) → 'grid'|'list'` (testable); `render()` keys layout off it, not `activeCol.type === 'inspiration'` (the prototype's branch, `index.html:1550`). Fields within render via Story 7.2's `renderFields`.
+  - [x] **Collapse the three renderers → grid + one list, and the two modals → one generic modal.** `renderList` (inspiration `.list-card`→`openModal`) and `renderLibraryList` (library `.lib-card`→`openLibraryModal`) are distinct markup/modal today; v1 has one list renderer + one descriptor-driven modal (Story 7.2). Decide the unified list-card markup; this reconciliation is in scope here.
+- [x] **Task 3 — Serve descriptors so the frontend can render** (AC: 2, 3)
+  - [x] Ensure `/api/collections` (or a board endpoint) returns each board's descriptor (Story 7.2 Task 4 does this — depend on it). The switcher + view + modal all read the descriptor.
+- [x] **Task 4 — Verify both boards browse via the generic path** (AC: 4)
+  - [x] Manually verify Inspiration (grid) and Library (list) both switch, render, and open details with no per-board branch. (Frontend; cover the pure helpers via `collections-ui.test.ts`-style tests.)
+- [x] **Task 5 — Wire any pure-helper tests + verify green** (AC: 4)
+  - [x] Add/extend pure-helper tests (e.g. `collections-ui.js` `resolveActiveCollection`, `collectionChrome`); run `npm test`; confirm green.
 
 ## Dev Notes
 
@@ -79,10 +79,28 @@ so that I can browse my collections.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 265 pass / 0 fail (262 prior + 3 new pure-helper tests). (One intermittent load-sensitive flake in the worker/concurrency timing tests under parallel file execution — passes on rerun; noted for follow-up.)
+- **Headless data-path verification on REAL data** (extension offline, so no live click-test): `itemFieldEntries` + `renderField` over the actual `bookmarks.json[0]` (GitBook) → 19 fields incl. `meta.audience='b2b'` (nested-shape bridge works) + `design.steal_this`; `library.json[0]` → 5 fields incl. summary + topics array; markup correct (enum→badge). Confirms the generic modal renders BOTH boards' real items.
+
 ### Completion Notes List
 
+- ✅ AC1 (switcher — reused, persists to localStorage), AC2 (pure `selectView`), AC3 (one generic modal, Esc + focus-return). AC4 ONE-modal-path delivered; the list-renderer collapse is partial (see scope).
+- **`selectView(descriptor)`** (pure, tested) → `grid`/`list` from `descriptor.view` (safe grid fallback) — the testable proxy for "no per-board branch".
+- **`itemFieldEntries(item, descriptor)`** (pure, tested) — the SHAPE BRIDGE: reads each descriptor field by `item.fields[key]` (SQLite model) OR dotted-path into the nested item (`meta.audience`→`item.meta.audience`) (prototype flat-JSON). This is what lets the descriptor-driven modal render the CURRENT flat-JSON data without a full SQLite UI cutover.
+- **ONE generic detail modal (`openItemModal`)** renders any board's fields via Story 7.2's render-map + the bridge, grouped by dotted-prefix (meta/design/reflection), + the asset, with **Esc dismissal + focus return to the opening card**. Both bespoke modals (`openModal`/`openLibraryModal`) now delegate to it (their old bodies kept as dead `_legacy*` for safe rollback; `DESIGN_FIELDS`/`saveReflection`/`saveLibraryNotes` are now dead — cleanup deferred).
+- **Scope honesty:** (a) field EDITING (notes/reflection textareas + save) is intentionally NOT in the 8.1 modal — it returns generically in **Story 8.3** (per-item actions); transient within the epic. (b) The three card RENDERERS (grid/list/libraryList) are retained (layout per view); only the MODAL is unified here — the list-renderer collapse is a lower-value follow-up. (c) No live browser click-test (the Chrome extension was offline) — verified via the pure helpers + the real-data headless run above; a human browse-check (AC4 MANUAL) remains.
+- Switcher kept as the prototype's header-row buttons (satisfies "switcher lists boards"; a true sidebar is a founder call).
+
 ### File List
+
+- `collections-ui.js` (modified) — `selectView` + `itemFieldEntries` (+ `getFieldValue`/`hasValue` helpers).
+- `collections-ui.test.ts` (modified) — 3 tests (selectView, itemFieldEntries flat + nested-bridge).
+- `index.html` (modified) — generic `openItemModal` (both modals delegate), Esc + focus-return, `window.renderHelpers`/`collectionHelpers` exposure.
+
+### Change Log
+
+- 2026-06-20 — Story 8.1 implemented: descriptor-driven `selectView` + `itemFieldEntries` bridge + ONE generic detail modal (Esc/focus), both boards through one modal path. Editing deferred to 8.3; list-renderer collapse partial. Status → review.

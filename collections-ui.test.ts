@@ -13,6 +13,8 @@ import {
   libraryHaystack,
   matchesLibraryFilters,
   topicCounts,
+  selectView,
+  itemFieldEntries,
 } from "./collections-ui.js";
 
 const COLLECTIONS = [
@@ -176,4 +178,40 @@ test("topicCounts returns frequency map of all topics across items", () => {
 
 test("topicCounts returns empty object for empty items array", () => {
   assert.deepEqual(topicCounts([]), {});
+});
+
+// --- Story 8.1: descriptor-driven view + generic field iteration ---
+
+test("selectView returns the descriptor's view (grid/list)", () => {
+  assert.equal(selectView({ view: "grid" }), "grid");
+  assert.equal(selectView({ view: "list" }), "list");
+  assert.equal(selectView(undefined), "grid"); // safe fallback
+  assert.equal(selectView({ view: "weird" }), "grid");
+});
+
+test("itemFieldEntries resolves SQLite-shape (flat fields) values in descriptor order", () => {
+  const descriptor = { view: "list", fields: [
+    { key: "summary", label: "Summary", type: "text" },
+    { key: "topics", label: "Topics", type: "tags" },
+    { key: "missing", label: "Missing", type: "text" },
+  ] };
+  const item = { fields: { summary: "S", topics: ["a"], missing: "" } };
+  const entries = itemFieldEntries(item, descriptor);
+  assert.deepEqual(entries.map((e) => e.field.key), ["summary", "topics"]); // empty + absent skipped
+  assert.equal(entries[0].value, "S");
+});
+
+test("itemFieldEntries bridges the flat-JSON nested shape via dotted keys", () => {
+  const descriptor = { view: "grid", fields: [
+    { key: "meta.audience", label: "Audience", type: "enum" },
+    { key: "design.steal_this", label: "Steal", type: "text" },
+    { key: "favorite_reason", label: "Why", type: "text" },
+  ] };
+  const item = { meta: { audience: "b2b" }, design: { steal_this: "x" }, favorite_reason: "good" };
+  const entries = itemFieldEntries(item, descriptor);
+  assert.deepEqual(entries.map((e) => [e.field.key, e.value]), [
+    ["meta.audience", "b2b"],
+    ["design.steal_this", "x"],
+    ["favorite_reason", "good"],
+  ]);
 });

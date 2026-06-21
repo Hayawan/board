@@ -1718,7 +1718,54 @@
     });
   }
 
+  // Story 8.1: ONE generic, descriptor-driven detail modal — renders ANY board's
+  // fields via the render-map (Story 7.2) + the shape bridge (itemFieldEntries),
+  // grouped by dotted-prefix (meta/design/reflection). Replaces the two bespoke
+  // modals. (Field editing — notes/favorite — returns generically in Story 8.3.)
+  let modalLastFocused = null;
+  function openItemModal(id) {
+    const item = bookmarks.find(b => b.id === id);
+    if (!item) return;
+    currentBookmark = item;
+    modalLastFocused = document.activeElement;
+    const descriptor = (collections.find(c => c.id === activeCollection) || {}).descriptor;
+    const rh = window.renderHelpers || {};
+    const ch = window.collectionHelpers || {};
+    const entries = (descriptor && ch.itemFieldEntries) ? ch.itemFieldEntries(item, descriptor) : [];
+
+    // group fields by dotted prefix (meta.* / design.* / reflection.* / ungrouped)
+    const groups = new Map();
+    for (const e of entries) {
+      const dot = e.field.key.indexOf('.');
+      const g = dot > 0 ? e.field.key.slice(0, dot) : '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(e);
+    }
+    const fieldHtml = [...groups.entries()].map(([g, es]) => `
+      ${g ? `<div class="field-group-label">${esc(g)}</div>` : ''}
+      ${es.map(e => `<div class="modal-field"><div class="field-label">${esc(e.field.label)}</div>${rh.renderField ? rh.renderField(e.field, e.value) : esc(String(e.value))}</div>`).join('')}
+    `).join('');
+
+    const content = document.getElementById('modal-content');
+    content.innerHTML = `
+      ${item.screenshot ? `<img class="modal-screenshot" src="${shotSrc(item)}" alt="${esc(item.title || '')}">` : ''}
+      <div class="modal-body">
+        <div class="modal-title-row"><div class="modal-title">${esc(item.title || item.url || '')}</div></div>
+        ${item.url ? `<div class="modal-url"><a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.url)}</a> · ${esc(item.added || '')}</div>` : ''}
+        ${fieldHtml || '<div class="field-value" style="color:var(--text-2)">No analysis yet.</div>'}
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="modal-cancel">Close</button>
+        </div>
+      </div>`;
+    document.getElementById('modal-cancel').onclick = closeModal;
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
   function openLibraryModal(id) {
+    return openItemModal(id);
+  }
+
+  function _legacyOpenLibraryModal(id) {
     currentLibraryItem = bookmarks.find(b => b.id === id);
     if (!currentLibraryItem) return;
     const b = currentLibraryItem;
@@ -1867,6 +1914,10 @@
   }
 
   function openModal(id) {
+    return openItemModal(id);
+  }
+
+  function _legacyOpenModal(id) {
     currentBookmark = bookmarks.find(b => b.id === id);
     if (!currentBookmark) return;
     const b = currentBookmark;
@@ -1988,7 +2039,19 @@
     document.getElementById('modal-overlay').classList.remove('open');
     currentBookmark = null;
     currentLibraryItem = null;
+    // Story 8.1: return focus to the card that opened the modal.
+    if (modalLastFocused && typeof modalLastFocused.focus === 'function') {
+      modalLastFocused.focus();
+      modalLastFocused = null;
+    }
   }
+
+  // Story 8.1: Esc dismisses the detail modal.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('modal-overlay').classList.contains('open')) {
+      closeModal();
+    }
+  });
 
   function hostname(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
@@ -2319,8 +2382,8 @@
   // load() is called by the module script below after collectionHelpers are initialized
 </script>
 <script type="module">
-  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts } from './collections-ui.js';
-  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts };
+  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries } from './collections-ui.js';
+  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries };
   // Story 7.2: generic descriptor-driven field renderer (Epic 8 wires it into the
   // descriptor-driven card/modal when the UI consumes the SQLite item model).
   import { renderField, renderFields, renderAsset } from './descriptor/render-map.js';
