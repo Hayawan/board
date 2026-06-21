@@ -1515,22 +1515,75 @@
     } catch { status.textContent = 'Network error'; btn.disabled = false; }
   }
 
+  const BOARD_FIELD_TYPES = ['text', 'number', 'date', 'url', 'enum', 'tags', 'image'];
+
+  // One editable field row. Existing fields keep their key (read-only — changing it
+  // would orphan stored item.fields data); new fields get an editable key.
+  function boardFieldRowHtml(field, isExisting) {
+    const f = field || { key: '', label: '', type: 'text', enrichable: true, description: '', values: [] };
+    const typeOpts = BOARD_FIELD_TYPES.map(t => `<option value="${t}"${f.type === t ? ' selected' : ''}>${t}</option>`).join('');
+    return `<div class="board-field-edit" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr auto auto;gap:6px;align-items:center;margin-bottom:6px">
+      <input class="bf-label reflection-input" style="margin:0" value="${esc(f.label || '')}" placeholder="Label">
+      <input class="bf-key reflection-input" style="margin:0;font-family:monospace;font-size:12px" value="${esc(f.key || '')}" placeholder="key" ${isExisting ? 'readonly title="key is fixed for existing fields"' : ''}>
+      <select class="bf-type reflection-input" style="margin:0">${typeOpts}</select>
+      <label style="font-size:12px;color:var(--text-2);white-space:nowrap"><input type="checkbox" class="bf-enrichable"${f.enrichable ? ' checked' : ''}> AI</label>
+      <button class="bf-remove btn btn-ghost" style="padding:4px 8px" title="Remove field">✕</button>
+      <input class="bf-desc reflection-input" style="margin:0;grid-column:1 / 4" value="${esc(f.description || '')}" placeholder="Description / AI hint (what goes in this field)">
+      <input class="bf-values reflection-input" style="margin:0;grid-column:4 / 6;${f.type === 'enum' ? '' : 'display:none'}" value="${esc((f.values || []).join(', '))}" placeholder="enum values (comma-separated)">
+    </div>`;
+  }
+
+  function wireBoardFieldRow(row) {
+    row.querySelector('.bf-remove').onclick = () => row.remove();
+    const typeSel = row.querySelector('.bf-type');
+    typeSel.onchange = () => {
+      row.querySelector('.bf-values').style.display = typeSel.value === 'enum' ? '' : 'none';
+    };
+  }
+
   function openEditBoardModal(boardId) {
     const col = collections.find(c => c.id === boardId);
     if (!col) return;
+    const d = col.descriptor || { fields: [], enrichment_prompt: '', view: 'grid', ingest_mode: 'url-readable' };
+    const viewOpts = ['grid', 'list'].map(v => `<option value="${v}"${d.view === v ? ' selected' : ''}>${v}</option>`).join('');
+    const ingestOpts = ['url-screenshot', 'url-readable', 'manual-upload'].map(m => `<option value="${m}"${d.ingest_mode === m ? ' selected' : ''}>${m}</option>`).join('');
     showModalContent(`
       <div class="modal-body">
         <div class="modal-title-row"><div class="modal-title">Edit board</div></div>
-        <div class="steal-this" style="margin-top:8px">
-          <div class="field-label">Board name</div>
-          <input id="edit-board-name" class="reflection-input" value="${esc(col.name)}">
+        <div class="field-label" style="margin-top:8px">Board name</div>
+        <input id="edit-board-name" class="reflection-input" value="${esc(col.name)}">
+
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <div style="flex:1"><div class="field-label">View</div><select id="edit-board-view" class="reflection-input">${viewOpts}</select></div>
+          <div style="flex:1"><div class="field-label">Ingest mode</div><select id="edit-board-ingest" class="reflection-input">${ingestOpts}</select></div>
         </div>
+
+        <div class="field-label" style="margin-top:12px">Enrichment prompt (the AI lens for this board)</div>
+        <textarea id="edit-board-prompt" class="reflection-input" rows="2" placeholder="How should the AI analyze each item?">${esc(d.enrichment_prompt || '')}</textarea>
+
+        <div class="field-label" style="margin-top:16px">Fields <span style="color:var(--text-3);font-weight:400">— check AI to let enrichment fill it; description guides the AI</span></div>
+        <div id="board-fields-container">
+          ${(d.fields || []).map(f => boardFieldRowHtml(f, true)).join('')}
+        </div>
+        <button class="btn btn-ghost" id="board-add-field" style="margin-top:4px">+ Add field</button>
+
         <div class="modal-footer">
           <span class="save-status" id="edit-board-status"></span>
           <button class="btn btn-ghost" id="modal-cancel">Close</button>
-          <button class="btn btn-primary" id="edit-board-save">Save name</button>
+          <button class="btn btn-primary" id="edit-board-save">Save changes</button>
         </div>
-        <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px">
+
+        <div style="margin-top:20px;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px">
+          <div class="field-label">Re-run AI</div>
+          <p style="color:var(--text-3);font-size:13px;margin:6px 0 10px">Re-analyze every item with the current fields. Your own (non-AI) fields and notes are kept.</p>
+          <button class="btn btn-ghost" id="board-reenrich">Re-run AI on all items</button>
+          <span id="board-reenrich-confirm" style="display:none">
+            <button class="btn btn-primary" id="board-reenrich-yes">Re-run now</button>
+            <button class="btn btn-ghost" id="board-reenrich-no">Cancel</button>
+          </span>
+        </div>
+
+        <div style="margin-top:20px;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px">
           <div class="field-label" style="color:var(--danger,#ef4444)">Danger zone</div>
           <p style="color:var(--text-3);font-size:13px;margin:6px 0 10px">Deletes the board and all its items + screenshots. This cannot be undone.</p>
           <button class="btn btn-ghost" id="edit-board-delete" style="color:var(--danger,#ef4444)">Delete board</button>
@@ -1540,8 +1593,31 @@
           </span>
         </div>
       </div>`);
+
+    const container = document.getElementById('board-fields-container');
+    container.querySelectorAll('.board-field-edit').forEach(wireBoardFieldRow);
+    document.getElementById('board-add-field').onclick = () => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = boardFieldRowHtml(null, false);
+      const row = tmp.firstElementChild;
+      container.appendChild(row);
+      wireBoardFieldRow(row);
+      row.querySelector('.bf-label').focus();
+    };
+
     document.getElementById('modal-cancel').onclick = closeModal;
-    document.getElementById('edit-board-save').onclick = () => saveBoardName(boardId);
+    document.getElementById('edit-board-save').onclick = () => saveBoardEdits(boardId);
+
+    document.getElementById('board-reenrich').onclick = () => {
+      document.getElementById('board-reenrich').style.display = 'none';
+      document.getElementById('board-reenrich-confirm').style.display = 'inline';
+    };
+    document.getElementById('board-reenrich-no').onclick = () => {
+      document.getElementById('board-reenrich-confirm').style.display = 'none';
+      document.getElementById('board-reenrich').style.display = 'inline';
+    };
+    document.getElementById('board-reenrich-yes').onclick = () => reenrichBoard(boardId);
+
     document.getElementById('edit-board-delete').onclick = () => {
       document.getElementById('edit-board-delete').style.display = 'none';
       document.getElementById('edit-board-delete-confirm').style.display = 'inline';
@@ -1553,18 +1629,57 @@
     document.getElementById('edit-board-delete-yes').onclick = () => deleteBoard(boardId);
   }
 
-  async function saveBoardName(boardId) {
+  function collectBoardDescriptor() {
+    const fields = [...document.querySelectorAll('#board-fields-container .board-field-edit')].map(row => {
+      const label = row.querySelector('.bf-label').value.trim();
+      let key = row.querySelector('.bf-key').value.trim();
+      if (!key && label) key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+      const type = row.querySelector('.bf-type').value;
+      const f = { key, label, type, enrichable: row.querySelector('.bf-enrichable').checked };
+      const desc = row.querySelector('.bf-desc').value.trim();
+      if (desc) f.description = desc;
+      if (type === 'enum') f.values = row.querySelector('.bf-values').value.split(',').map(s => s.trim()).filter(Boolean);
+      return f;
+    }).filter(f => f.key && f.label);
+    return {
+      fields,
+      enrichment_prompt: document.getElementById('edit-board-prompt').value,
+      view: document.getElementById('edit-board-view').value,
+      ingest_mode: document.getElementById('edit-board-ingest').value,
+    };
+  }
+
+  async function saveBoardEdits(boardId) {
     const name = document.getElementById('edit-board-name').value.trim();
     const status = document.getElementById('edit-board-status');
     if (!name) { status.textContent = 'Name is required'; return; }
+    const descriptor = collectBoardDescriptor();
     status.textContent = 'Saving…';
     try {
       const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, descriptor }),
       });
-      if (!res.ok) { status.textContent = 'Save failed'; return; }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { status.textContent = data.error ? `Invalid: ${data.error}` : 'Save failed'; return; }
       closeModal();
       await load();
+    } catch { status.textContent = 'Network error'; }
+  }
+
+  async function reenrichBoard(boardId) {
+    const status = document.getElementById('edit-board-status');
+    status.textContent = 'Queuing…';
+    try {
+      // Save any pending field edits first so the re-run uses the latest descriptor.
+      const name = document.getElementById('edit-board-name').value.trim();
+      await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, descriptor: collectBoardDescriptor() }),
+      });
+      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/reenrich`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { status.textContent = 'Re-run failed'; return; }
+      closeModal();
+      await load(); // SSE will stream per-item updates as they finish
     } catch { status.textContent = 'Network error'; }
   }
 
