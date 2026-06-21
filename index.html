@@ -2321,6 +2321,10 @@
 <script type="module">
   import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts } from './collections-ui.js';
   window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts };
+  // Story 7.2: generic descriptor-driven field renderer (Epic 8 wires it into the
+  // descriptor-driven card/modal when the UI consumes the SQLite item model).
+  import { renderField, renderFields, renderAsset } from './descriptor/render-map.js';
+  window.renderHelpers = { renderField, renderFields, renderAsset };
   load();
 </script>
 </body>

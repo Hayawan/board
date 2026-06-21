@@ -21,6 +21,15 @@ import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills
 import { selectProvider } from "./llm/select-provider.js";
 import { startSseStream } from "./sse.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
+import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR } from "./db/seed.js";
+import type { BoardDescriptor } from "./descriptor/types.js";
+
+// Story 7.2: the seeded boards' descriptors, served on /api/collections for the
+// frontend's generic field renderer.
+const SEED_DESCRIPTORS: Record<string, BoardDescriptor> = {
+  [INSPIRATION_BOARD_ID]: INSPIRATION_DESCRIPTOR,
+  [LIBRARY_BOARD_ID]: LIBRARY_DESCRIPTOR,
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -337,7 +346,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
 
   // --- Collections manifest ---
-  app.get("/api/collections", async () => listCollections());
+  // Story 7.2: attach each board's descriptor so the frontend's generic renderer
+  // (descriptor/render-map) has the field list + types. Served from the seed
+  // constants (no DB read → no test pollution); composed boards (Epic 10) will read
+  // theirs from SQLite.
+  app.get("/api/collections", async () =>
+    listCollections().map((c) => ({ ...c, descriptor: SEED_DESCRIPTORS[c.id] ?? null }))
+  );
 
   // --- Taxonomy (Inspiration vocabulary; unchanged) ---
   app.get("/api/taxonomy", async () =>
