@@ -1,6 +1,6 @@
 # Story 6.5: Capture concurrency & timeout safety
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,19 +28,19 @@ so that capture never OOMs my box.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing concurrency + timeout tests first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `capture/concurrency.test.ts` with an **async, deferred-close fake launcher** (live-count up on launch, down only when a test-controlled `close`/`exit` promise resolves): launch capture-1, dispatch capture-2 in capture-1's pre-close window, assert capture-2's launcher is NOT called until close-1 resolves, then IS. A **never-resolving** hung capture + injected timer (Story 5.1) → assert `process().kill()` called (spy) + item `error` + reason "capture timed out". (A synchronous fake makes this tautological — use the deferred-close async fake.)
-  - [ ] Run; confirm red for the right reason.
-- [ ] **Task 2 — Run capture on the Story 5.1 worker (concurrency 1)** (AC: 1)
-  - [ ] Ensure every capture (6.2 screenshot, 6.3 readable render-fallback) runs as a job on the single worker (Story 5.1) — so capture concurrency is structurally 1 (not an ad-hoc semaphore in the adapter). The worker's serial drain IS the concurrency cap.
-- [ ] **Task 3 — Implement per-capture timeout → force-kill + awaitable teardown** (AC: 2, 3)
-  - [ ] Wire the Story 5.1 cancellation signal (`AbortController`) into the adapters. On abort: race `browser.close()` against the timeout; if the timer wins, `const proc = browser.process(); proc?.kill("SIGKILL")` then **`await once(proc, "exit")`** — expose this as a `teardownComplete` promise. `kill()` is sync fire-and-forget (returns boolean), so awaiting `exit` is the ONLY way AC 3's "await teardown" is real.
-  - [ ] The worker awaits `teardownComplete` before launching the next *capture* job (AC 1). Mark the item `error` (Story 5.2) with "capture timed out" — that can happen immediately; the gate is specifically on launching the next memory-heavy capture, not on status-marking.
-  - [ ] (The prototype only `close()`s with no kill/timeout, `add.ts:334-336` — the force-kill + awaited-exit is net-new.)
-- [ ] **Task 4 — Bound memory: one launch per job, killed immediately** (AC: 1, 2)
-  - [ ] Confirm the launch-per-job + immediate-kill model (architecture §1: "launch→screenshot→kill, concurrency 1") — no browser pooling, no keep-alive browser. Each capture launches, captures, kills. This keeps Chromium memory transient. [Source: architecture §1]
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing concurrency + timeout tests first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `capture/concurrency.test.ts` with an **async, deferred-close fake launcher** (live-count up on launch, down only when a test-controlled `close`/`exit` promise resolves): launch capture-1, dispatch capture-2 in capture-1's pre-close window, assert capture-2's launcher is NOT called until close-1 resolves, then IS. A **never-resolving** hung capture + injected timer (Story 5.1) → assert `process().kill()` called (spy) + item `error` + reason "capture timed out". (A synchronous fake makes this tautological — use the deferred-close async fake.)
+  - [x] Run; confirm red for the right reason.
+- [x] **Task 2 — Run capture on the Story 5.1 worker (concurrency 1)** (AC: 1)
+  - [x] Ensure every capture (6.2 screenshot, 6.3 readable render-fallback) runs as a job on the single worker (Story 5.1) — so capture concurrency is structurally 1 (not an ad-hoc semaphore in the adapter). The worker's serial drain IS the concurrency cap.
+- [x] **Task 3 — Implement per-capture timeout → force-kill + awaitable teardown** (AC: 2, 3)
+  - [x] Wire the Story 5.1 cancellation signal (`AbortController`) into the adapters. On abort: race `browser.close()` against the timeout; if the timer wins, `const proc = browser.process(); proc?.kill("SIGKILL")` then **`await once(proc, "exit")`** — expose this as a `teardownComplete` promise. `kill()` is sync fire-and-forget (returns boolean), so awaiting `exit` is the ONLY way AC 3's "await teardown" is real.
+  - [x] The worker awaits `teardownComplete` before launching the next *capture* job (AC 1). Mark the item `error` (Story 5.2) with "capture timed out" — that can happen immediately; the gate is specifically on launching the next memory-heavy capture, not on status-marking.
+  - [x] (The prototype only `close()`s with no kill/timeout, `add.ts:334-336` — the force-kill + awaited-exit is net-new.)
+- [x] **Task 4 — Bound memory: one launch per job, killed immediately** (AC: 1, 2)
+  - [x] Confirm the launch-per-job + immediate-kill model (architecture §1: "launch→screenshot→kill, concurrency 1") — no browser pooling, no keep-alive browser. Each capture launches, captures, kills. This keeps Chromium memory transient. [Source: architecture §1]
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -83,10 +83,32 @@ so that capture never OOMs my box.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 247 pass / 0 fail (242 prior + 5 new concurrency tests). No pollution.
+- Caught during dev: an early `createBrowserTeardown` awaited `close()` AFTER killing on the abort path — `close()` hangs on a wedged page (the reason we kill), hanging teardown. Fixed: abort path = kill + await exit ONLY; normal path = close.
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied. **Epic 6 complete.**
+- **`createBrowserTeardown(browser, signal)`** (`capture/teardown.ts`): a MEMOIZED, AWAITABLE teardown. On abort (timeout): `browser.process().kill('SIGKILL')` + `await once(proc, 'exit')` — NOT `close()` (a wedged page makes close hang; kill is sync fire-and-forget so awaiting `exit` is the only real "await teardown", AC3). On normal: `close()`. Repeated calls (abort handler / work `finally` / job teardown) tear down exactly once.
+- **Concurrency 1 is structural (AC1):** capture runs as a job on the Story 5.1 worker (via add-item's `runItemJob`) — the serial drain IS the cap. The next capture's launch is gated: the work's `finally` awaits teardown (success path holds the slot), and on TIMEOUT the capture job provides a `teardown` (wired through `ctx.registerTeardown`) that the worker awaits before releasing the slot — so two Chromiums never coexist. Tested: capture-2 not launched until capture-1's deferred close resolves.
+- **Hung capture → force-kill + error (AC2):** a never-resolving capture + the injected 5.1 timer → abort → `kill('SIGKILL')` (spy asserts) + item `status=error`, reason "timed out" (Story 5.2).
+- **Awaitable handle (AC3):** `teardownComplete` = the memoized promise resolving on the proc `exit`; `add-item`'s capture job `teardown` awaits it.
+- **Wiring:** `url-screenshot` adapter uses `createBrowserTeardown` (registered via `ctx.registerTeardown`, force-close on abort, await in finally). `CaptureCtx.registerTeardown` + `runCaptureForItem` thread it; `add-item` connects it to the job's `teardown`. Launch-per-job, killed immediately — no browser pool (architecture §1).
+- **Tests (AC4):** async deferred-close fake (live-count gate, non-tautological) + EventEmitter fake proc emitting `exit` on kill; injected timer (no real wall-clock), no real Chrome.
+
 ### File List
+
+- `capture/teardown.ts` (new) — `createBrowserTeardown` (force-kill + await-exit, memoized) + `TeardownBrowser`/`CaptureProcess` types.
+- `capture/concurrency.test.ts` (new) — 5 tests (teardown abort-kill/normal/memoized, concurrency-1 gate, timeout→kill+error).
+- `capture/adapter.ts` (modified) — `CaptureCtx.registerTeardown` + threaded through `runCaptureForItem`.
+- `capture/url-screenshot.ts` (modified) — uses `createBrowserTeardown` (register + abort + finally).
+- `skills/add-item.ts` (modified) — capture job wires the teardown handle.
+- `package.json` (modified) — appended `capture/concurrency.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 6.5 implemented: createBrowserTeardown (SIGKILL + await-exit on timeout), capture concurrency-1 gating (worker awaits teardown before next launch), force-kill + error on hung capture. Epic 6 complete. Status → review.

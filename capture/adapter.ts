@@ -54,6 +54,12 @@ export interface CaptureCtx {
   signal?: AbortSignal;
   /** Where url adapters write screenshot/asset files (Story 2.2). */
   screenshotsDir?: string;
+  /**
+   * Story 6.5: an adapter that launches a browser registers its memoized teardown
+   * here so the capture JOB can await it before the worker launches the next capture
+   * (the 5.1↔6.5 gate — two Chromiums never coexist).
+   */
+  registerTeardown?: (teardown: () => Promise<void>) => void;
 }
 
 export interface CaptureAdapter {
@@ -114,7 +120,14 @@ export async function dispatchCapture(
 export async function runCaptureForItem(
   handle: DbHandle,
   registry: CaptureRegistry,
-  args: { itemId: string; boardId: string; source: CaptureSource; signal?: AbortSignal; screenshotsDir?: string },
+  args: {
+    itemId: string;
+    boardId: string;
+    source: CaptureSource;
+    signal?: AbortSignal;
+    screenshotsDir?: string;
+    registerTeardown?: (teardown: () => Promise<void>) => void;
+  },
 ): Promise<void> {
   const board = handle.db.select().from(boards).where(eq(boards.id, args.boardId)).get();
   const descriptor = board?.descriptor as BoardDescriptor | undefined;
@@ -126,6 +139,7 @@ export async function runCaptureForItem(
     boardId: args.boardId,
     signal: args.signal,
     screenshotsDir: args.screenshotsDir,
+    registerTeardown: args.registerTeardown,
   });
 
   const item = handle.db.select().from(items).where(eq(items.id, args.itemId)).get();

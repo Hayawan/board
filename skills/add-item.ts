@@ -49,6 +49,10 @@ export const addItemSkill = defineSkill(
     const ingestMode = (board.descriptor as BoardDescriptor | undefined)?.ingest_mode;
     if (ingestMode && ingestMode !== 'manual-upload' && input.source && captureRegistry.has(ingestMode)) {
       const source = input.source;
+      // Story 6.5: the adapter registers its browser teardown here; the job's
+      // `teardown` awaits it so the worker won't launch the next capture until this
+      // one's browser is confirmed dead (two Chromiums never coexist).
+      let captureTeardown: (() => Promise<void>) | undefined;
       void runItemJob(ctx.db, {
         itemId,
         type: 'capture',
@@ -60,7 +64,9 @@ export const addItemSkill = defineSkill(
             source,
             signal,
             screenshotsDir: config.screenshotsDir,
+            registerTeardown: (fn) => { captureTeardown = fn; },
           }),
+        teardown: async () => { if (captureTeardown) await captureTeardown(); },
       });
     }
 

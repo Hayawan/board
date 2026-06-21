@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { launchBrowser } from '../browser.js';
 import { config } from '../config.js';
+import { createBrowserTeardown, type TeardownBrowser } from './teardown.js';
 import type { AssetSpec, CaptureAdapter, CaptureCtx, CaptureResult, CaptureSource } from './adapter.js';
 
 // Story 6.2 — url-screenshot adapter (Inspiration). Ports the prototype's full-page
@@ -70,9 +71,12 @@ export function createUrlScreenshotAdapter(deps: Deps = {}): CaptureAdapter {
       }
       const url = source;
       const browser = await launch();
-      // On timeout/abort (Story 5.1/6.5), force-close the browser so a hung page op
-      // unblocks and the worker can release memory before the next capture.
-      const onAbort = () => { void browser.close().catch(() => {}); };
+      // Story 6.5: memoized teardown — on abort (timeout) SIGKILL + await exit (a
+      // wedged page makes close() hang); else close(). Registered on ctx so the
+      // capture JOB awaits it before the worker launches the next capture.
+      const teardown = createBrowserTeardown(browser as unknown as TeardownBrowser, ctx.signal);
+      ctx.registerTeardown?.(teardown);
+      const onAbort = () => { void teardown(); };
       ctx.signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
@@ -108,7 +112,7 @@ export function createUrlScreenshotAdapter(deps: Deps = {}): CaptureAdapter {
         return { fields: { title, text, url }, assets: [asset] };
       } finally {
         ctx.signal?.removeEventListener('abort', onAbort);
-        await browser.close().catch(() => {}); // teardown ALWAYS (no leaked Chrome)
+        await teardown(); // teardown ALWAYS (memoized; no leaked Chrome)
       }
     },
   };
