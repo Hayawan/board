@@ -94,7 +94,32 @@ enable analysis, set the provider env on the unit (`Environment=LLM_BASE_URL=…
 LLM_API_KEY=… LLM_MODEL=…` or a CLI agent via `LLM_AGENT`) and `systemctl restart
 board-oss`.
 
-The container image lands in Story 11.2.
+### Docker
+
+A multi-stage **Debian-slim/glibc** image (not Alpine — `better-sqlite3` + chromium
+on musl is an ABI minefield) runs board-oss as a non-root user with chromium baked in.
+
+```bash
+docker build -t board-oss .
+docker run -d --name board-oss \
+  -p 8080:8080 \
+  -v board-oss-data:/data \
+  board-oss
+```
+
+- **Data persists in the `/data` volume** (`DATA_DIR=/data`) — rebuilds/restarts never
+  lose data. Mount a host path or named volume.
+- **`HOST=0.0.0.0` inside the container** is the one acceptable broad bind: the
+  container boundary is the isolation and the published port is what you control. The
+  Story 2.4 boot warning still fires by design — **front the published port with a
+  reverse proxy** (Caddy+Authelia / Tailscale); don't expose it raw.
+- **Chromium** is the apt `chromium` package; capture uses the no-sandbox launch args
+  (Story 6.2) so no `--privileged`/`SYS_ADMIN` is needed. `HEALTHCHECK` hits `/healthz`.
+- **Enable AI:** pass provider env, e.g. `-e LLM_BASE_URL=… -e LLM_API_KEY=… -e
+  LLM_MODEL=…` (or `-e LLM_AGENT=…` for a CLI agent).
+
+CI (`.github/workflows/ci.yml`) runs the unit suite and builds + boots the image,
+asserting `/healthz` and a real in-container screenshot capture.
 
 ## Portability
 

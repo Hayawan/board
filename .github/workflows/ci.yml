@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The app's logic is covered by the unit suite (node:test).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  # Story 11.2: the container image's "test" is build + boot + /healthz + a smoke
+  # capture (chromium-in-container is the single most fragile thing — gate it).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t board-oss:ci .
+
+      - name: Run container (named volume for the persistence check)
+        run: |
+          docker volume create boss-data
+          docker run -d --name boss -p 8080:8080 -v boss-data:/data board-oss:ci
+
+      - name: Wait for /healthz (boot proof, AC3)
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz | grep -q '"ok":true'; then
+              echo "healthz OK"; exit 0
+            fi
+            sleep 1
+          done
+          echo "container did not become healthy"; docker logs boss; exit 1
+
+      - name: Smoke capture (AC2 — one real capture must succeed)
+        run: |
+          # Enqueue a capture on the screenshot board; the worker writes a PNG into the
+          # /data volume on success — the gate for chromium-in-container.
+          curl -fsS -X POST http://127.0.0.1:8080/skills/add-item \
+            -H 'content-type: application/json' \
+            -d '{"boardId":"inspiration","source":"https://example.com"}'
+          echo "waiting for the screenshot to land..."
+          for _ in $(seq 1 60); do
+            if docker exec boss sh -c 'ls /data/screenshots/*.png >/dev/null 2>&1'; then
+              echo "capture succeeded — screenshot written"; exit 0
+            fi
+            sleep 2
+          done
+          echo "no screenshot produced — capture failed"; docker logs boss; exit 1
+
+      - name: Data persists across restart (AC4)
+        run: |
+          docker restart boss
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/healthz | grep -q '"ok":true' && break
+            sleep 1
+          done
+          docker exec boss sh -c 'ls /data/screenshots/*.png >/dev/null 2>&1' \
+            && echo "data persisted across restart" \
+            || { echo "data lost on restart"; exit 1; }
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f boss || true

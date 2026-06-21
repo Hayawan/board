@@ -1,0 +1,10 @@
+# Keep the build context (and the runtime `COPY . .`) slim + reproducible.
+node_modules
+data
+.git
+.github
+*.log
+.repomix
+.serena
+docs/bmad
+**/*.test.ts
