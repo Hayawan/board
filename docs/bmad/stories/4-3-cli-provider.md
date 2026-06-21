@@ -1,6 +1,6 @@
 # Story 4.3: CliProvider (coding-agent subprocess)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,23 +34,23 @@ so that I can enrich without an API key.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the CHARACTERIZATION test FIRST (NFR-5)** (AC: 1)
-  - [ ] Create `llm/cli-provider.characterization.test.ts` (or extend `add.test.ts`): pin `buildAnalysisCommand("claude", ...)` → exact `{command, args}` (incl. `--json-schema`, `--append-system-prompt`, `--output-format json`, optional `--model`); pin `buildAnalysisCommand("codex", ...)` → exact argv (incl. `--output-schema <file>`, `--output-last-message <file>`, `exec`, `--sandbox read-only`); pin `parseJsonFromText` (fence-strip + `{`…`}` fallback) and `extractAnalysisPayload` (`.structured_output ?? .result ?? value`) and `toCodexOutputSchema` (forces `additionalProperties:false` + `required=all`). These pin TODAY's behavior; they must pass against the unrefactored prototype first.
-  - [ ] Run; confirm GREEN against the current `add.ts` (characterization tests pin existing behavior — they start green, unlike TDD red).
-- [ ] **Task 2 — Write the failing CliProvider tests (TDD for the NEW behavior)** (AC: 2, 3, 4, 5)
-  - [ ] Create `llm/cli-provider.test.ts`: inject a fake spawner (canned stdout/exit); assert `complete` spawns with schema injected, parses + `schema.parse`s, throws typed error on schema-mismatch AND on non-zero exit; assert the timeout kills a hung spawn (fake a never-resolving process); assert no secret in argv; run the **Story 4.1 conformance suite** against `CliProvider`.
-  - [ ] Run; confirm red.
-- [ ] **Task 3 — Extract + port `buildAnalysisCommand` into `CliProvider`** (AC: 2, 5)
-  - [ ] Create `llm/cli-provider.ts`: move/adapt `buildAnalysisCommand` (`add.ts:399-436`), `toCodexOutputSchema` (`add.ts:375-397`), `parseJsonFromText` (`add.ts:351-366`), `extractAnalysisPayload` (`add.ts:368-373`), and the spawn/parse core of `analyze` (`add.ts:438-476`) behind `LLMProvider.complete`. Keep the claude-inline-stdout vs codex-tempfile-resultfile split (AC 5). The characterization test (Task 1) guards the move.
-  - [ ] Resolve agent + model from config (`BOARD_ANALYSIS_AGENT`/model, ported to config in Story 2.1; `resolveAnalysisAgent` `add.ts:175-188`).
-- [ ] **Task 4 — Harden the lifecycle (async `spawn`, mandatory)** (AC: 3)
-  - [ ] **Switch from `spawnSync` to async `spawn`** — this is mandatory, not "consider". `spawnSync` blocks the event loop (a never-resolving fake spawner would hang the *test*, not the product) and its timeout/kill lives in libuv where an injected fake can't exercise it. Async `spawn` + an injectable timer is the ONLY shape where the timeout→kill is unit-testable. The prototype's `spawnSync` (`add.ts:454-459`) has `maxBuffer` but **no timeout** — this is the net-new hardening.
-  - [ ] Implement: wall-clock timeout fires → `child.kill()` (assert in test that kill was called); non-zero exit → `LLMTransportError`; capture stderr; ensure no secret/key is on argv (schema/prompt on argv is fine).
-- [ ] **Task 5 — Inject the spawner AND the codex result-file read** (AC: 4, 5)
-  - [ ] Make the spawn function injectable (default real `spawn`) so tests pass a controllable fake child (canned stdout/exit, or a never-resolving child for the timeout test) — mirror the prototype's `RunAddDeps.analyzeOverride` seam (`add.ts:565-568`).
-  - [ ] **The codex path reads its output from a result FILE (`fs.readFileSync(resultFile)`, `add.ts:468-469`), not stdout** — so injecting the spawner alone does NOT cover codex. Make the result-file read injectable too (the fake writes the temp result file, or the fs-read is a seam) so AC5's codex branch is actually under test. Without this, the codex output path is asserted by no test.
-- [ ] **Task 6 — Wire tests + verify green** (AC: 4)
-  - [ ] Add both test files to the `test` script; run `npm test`; confirm green (characterization + new) + conformance + existing suites unaffected.
+- [x] **Task 1 — Write the CHARACTERIZATION test FIRST (NFR-5)** (AC: 1)
+  - [x] Create `llm/cli-provider.characterization.test.ts` (or extend `add.test.ts`): pin `buildAnalysisCommand("claude", ...)` → exact `{command, args}` (incl. `--json-schema`, `--append-system-prompt`, `--output-format json`, optional `--model`); pin `buildAnalysisCommand("codex", ...)` → exact argv (incl. `--output-schema <file>`, `--output-last-message <file>`, `exec`, `--sandbox read-only`); pin `parseJsonFromText` (fence-strip + `{`…`}` fallback) and `extractAnalysisPayload` (`.structured_output ?? .result ?? value`) and `toCodexOutputSchema` (forces `additionalProperties:false` + `required=all`). These pin TODAY's behavior; they must pass against the unrefactored prototype first.
+  - [x] Run; confirm GREEN against the current `add.ts` (characterization tests pin existing behavior — they start green, unlike TDD red).
+- [x] **Task 2 — Write the failing CliProvider tests (TDD for the NEW behavior)** (AC: 2, 3, 4, 5)
+  - [x] Create `llm/cli-provider.test.ts`: inject a fake spawner (canned stdout/exit); assert `complete` spawns with schema injected, parses + `schema.parse`s, throws typed error on schema-mismatch AND on non-zero exit; assert the timeout kills a hung spawn (fake a never-resolving process); assert no secret in argv; run the **Story 4.1 conformance suite** against `CliProvider`.
+  - [x] Run; confirm red.
+- [x] **Task 3 — Extract + port `buildAnalysisCommand` into `CliProvider`** (AC: 2, 5)
+  - [x] Create `llm/cli-provider.ts`: move/adapt `buildAnalysisCommand` (`add.ts:399-436`), `toCodexOutputSchema` (`add.ts:375-397`), `parseJsonFromText` (`add.ts:351-366`), `extractAnalysisPayload` (`add.ts:368-373`), and the spawn/parse core of `analyze` (`add.ts:438-476`) behind `LLMProvider.complete`. Keep the claude-inline-stdout vs codex-tempfile-resultfile split (AC 5). The characterization test (Task 1) guards the move.
+  - [x] Resolve agent + model from config (`BOARD_ANALYSIS_AGENT`/model, ported to config in Story 2.1; `resolveAnalysisAgent` `add.ts:175-188`).
+- [x] **Task 4 — Harden the lifecycle (async `spawn`, mandatory)** (AC: 3)
+  - [x] **Switch from `spawnSync` to async `spawn`** — this is mandatory, not "consider". `spawnSync` blocks the event loop (a never-resolving fake spawner would hang the *test*, not the product) and its timeout/kill lives in libuv where an injected fake can't exercise it. Async `spawn` + an injectable timer is the ONLY shape where the timeout→kill is unit-testable. The prototype's `spawnSync` (`add.ts:454-459`) has `maxBuffer` but **no timeout** — this is the net-new hardening.
+  - [x] Implement: wall-clock timeout fires → `child.kill()` (assert in test that kill was called); non-zero exit → `LLMTransportError`; capture stderr; ensure no secret/key is on argv (schema/prompt on argv is fine).
+- [x] **Task 5 — Inject the spawner AND the codex result-file read** (AC: 4, 5)
+  - [x] Make the spawn function injectable (default real `spawn`) so tests pass a controllable fake child (canned stdout/exit, or a never-resolving child for the timeout test) — mirror the prototype's `RunAddDeps.analyzeOverride` seam (`add.ts:565-568`).
+  - [x] **The codex path reads its output from a result FILE (`fs.readFileSync(resultFile)`, `add.ts:468-469`), not stdout** — so injecting the spawner alone does NOT cover codex. Make the result-file read injectable too (the fake writes the temp result file, or the fs-read is a seam) so AC5's codex branch is actually under test. Without this, the codex output path is asserted by no test.
+- [x] **Task 6 — Wire tests + verify green** (AC: 4)
+  - [x] Add both test files to the `test` script; run `npm test`; confirm green (characterization + new) + conformance + existing suites unaffected.
 
 ## Dev Notes
 
@@ -100,10 +100,31 @@ so that I can enrich without an API key.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 196 pass / 0 fail (183 prior + 6 characterization + 7 CliProvider). Characterization tests start green against the unrefactored `add.ts`.
+
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied.
+- **Characterization-first (AC1, NFR-5):** `llm/cli-provider.characterization.test.ts` pins the prototype's exact claude + codex argv, `parseJsonFromText` (raw/fenced/brace-fallback), `extractAnalysisPayload` (structured_output ?? result ?? value), and `toCodexOutputSchema` (additionalProperties:false + required=all). They started green and stayed green — the port is behavior-preserving.
+- **Reuse, not fork:** `CliProvider` IMPORTS `buildAnalysisCommand`/`parseJsonFromText`/`extractAnalysisPayload`/`toCodexOutputSchema` from `add.ts` (already exported, characterization-pinned) + `zodToJsonSchema` from `http-provider.ts`. No duplicated logic; `add.ts` untouched (its tests stay green).
+- **claude/codex split preserved (AC5):** claude gets the schema inline on argv + reads **stdout**; codex writes schema to a temp file, uses the stricter `toCodexOutputSchema`, and reads the **result file** (via an injected `readFile` seam so the codex output path is genuinely under test).
+- **Lifecycle hardened (AC3, the net-new value):** switched from the prototype's blocking `spawnSync` (no timeout) to async `spawn` + a wall-clock timeout that **kills** the child (tested: a hung fake child → `kill` called + `LLMTransportError`), non-zero exit → `LLMTransportError` (stderr captured/logged, truncated), spawn error → `LLMTransportError`. Schema/parse failures → `LLMSchemaError`.
+- **No secrets in argv (AC3):** CLI uses the user's subscription — no key exists; the test asserts no `bearer`/`api-key`/`sk-` token appears on argv. Schema + prompt on argv is fine (not secret).
+- **Injected spawner** (default node `spawn` with piped stdio) → no real subprocess in tests; canned stdout/exit/hang drive all paths deterministically.
+- **Passes the shared conformance suite (AC4)** via the claude/stdout seam.
+- **`cursor` out of scope (AC6):** the agent enum is `claude | codex` only.
+
 ### File List
+
+- `llm/cli-provider.ts` (new) — `CliProvider` (async spawn + timeout/kill, claude/codex split) reusing add.ts helpers.
+- `llm/cli-provider.characterization.test.ts` (new) — 6 behavior-pinning tests.
+- `llm/cli-provider.test.ts` (new) — 7 tests (claude argv/parse, codex result-file, schema-error, non-zero exit, timeout-kill, conformance ×2).
+- `package.json` (modified) — appended both test files to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 4.3 implemented: hardened CliProvider port (characterization-first) — async spawn + timeout/kill, claude/codex split, reuses add.ts helpers, passes the conformance suite. Status → review.
