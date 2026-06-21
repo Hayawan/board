@@ -1,4 +1,7 @@
+import { addItemSkill } from './add-item.js';
+import { createBoardSkill } from './create-board.js';
 import { importBookmarksSkill } from './import-bookmarks.js';
+import { tagSkill } from './tag.js';
 import type { Skill } from './types.js';
 
 // Story 3.1 — the skill registry. A FACTORY (not a module-global Map) so each
@@ -43,5 +46,8 @@ export function createRegistry(): SkillRegistry {
  */
 export function registerAllSkills(registry: SkillRegistry): void {
   registry.register(importBookmarksSkill); // Story 3.3
-  // 3.4 (create-board/add-item/tag) and Epic 10 (compose-board/generate-fields) add here.
+  registry.register(createBoardSkill); // Story 3.4
+  registry.register(addItemSkill); // Story 3.4
+  registry.register(tagSkill); // Story 3.4
+  // Epic 10 (compose-board / generate-fields) adds here.
 }

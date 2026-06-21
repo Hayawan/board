@@ -115,7 +115,20 @@ export function seed(db: BetterSQLite3Database<Record<string, unknown>>): void {
   for (const b of SEED_BOARDS) {
     const existing = db.select().from(boards).where(eq(boards.id, b.id)).get();
     if (existing) continue;
-    const descriptor = validateDescriptor(b.descriptor);
-    db.insert(boards).values({ id: b.id, name: b.name, view: descriptor.view, descriptor }).run();
+    insertBoard(db, b);
   }
+}
+
+/**
+ * Validate a descriptor and insert a board row (the shared board-insert primitive,
+ * reused by both the seed and Story 3.4's `create-board` skill so there is ONE
+ * board-insert path that can't drift). `view` is denormalized from the descriptor.
+ * Caller owns any existence/idempotency check.
+ */
+export function insertBoard(
+  db: BetterSQLite3Database<Record<string, unknown>>,
+  board: { id: string; name: string; descriptor: BoardDescriptor },
+): void {
+  const descriptor = validateDescriptor(board.descriptor);
+  db.insert(boards).values({ id: board.id, name: board.name, view: descriptor.view, descriptor }).run();
 }

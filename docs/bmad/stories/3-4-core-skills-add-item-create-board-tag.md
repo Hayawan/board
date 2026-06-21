@@ -1,6 +1,6 @@
 # Story 3.4: Core capabilities registered as skills (add-item, create-board, tag)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,19 +30,19 @@ so that AD11 holds uniformly and the UI drives them through the one generic rout
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write failing tests first (TDD)** (AC: 1, 2, 4)
-  - [ ] In `skills/core-skills.test.ts` (fresh registry + temp DB): assert each of the three skills resolves and is reachable via `POST /skills/:name`; then assert the **side-effects** (AC 4): after `create-board` a `board` row exists; after `add-item` a `status=pending` item exists; after `tag`, an **FTS query for the new tag returns the item** (AC 2 — exercise the index, not just read the field).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement the `tag` skill (fully specified here)** (AC: 2)
-  - [ ] `skills/tag.ts`: `inputSchema { itemId, tags: string[] }`, `outputSchema { itemId, tags }`. `run` loads the item via `ctx.db`, updates its `tags` field, and writes through the **typed item-write helper (Story 1.4 — the FTS-maintaining write)** so `search_blob`/FTS refresh. The proof (Task 1) is an FTS query returning the item, not a column read.
-- [ ] **Task 3 — Implement `create-board` (reuse 1.2; persistence primitive only)** (AC: 3)
-  - [ ] `skills/create-board.ts`: `inputSchema` = a board descriptor validated against **Story 1.2's descriptor schema + board-insert helper** — REUSE them, do not fork (same wrap-not-fork rule as 3.3, so there aren't two board-insert paths drifting from 1.2's seed). `run` validates (closed field-type set) and inserts a `board` row. The composer (Epic 10) builds the descriptor from NL and calls this skill on accept — keep `create-board` the persistence primitive, not the NL generator.
-- [ ] **Task 4 — Implement `add-item` (create pending item ONLY; no enqueue)** (AC: 3)
-  - [ ] `skills/add-item.ts`: `inputSchema { boardId, source, fields?: z.record(z.unknown()) }` (freeform `fields` is descriptor-shaped — `z.record(z.unknown())`, not `any`), `outputSchema { itemId, status }`. `run` creates an `item` under the board at `status=pending` via the typed item-write helper — and **does NOT enqueue** any capture/enrichment job (no worker drains the queue until 5.1; no capture adapter until Epic 6). Leave a documented seam (a clearly-commented extension point) where Epic 6 adds the enqueue. Do NOT half-wire an enqueue against a non-existent worker/adapter.
-- [ ] **Task 5 — Register all three at boot** (AC: 1)
-  - [ ] Add the three to `registerAllSkills(registry)`. Confirm each is invokable via the 3.2 route.
-- [ ] **Task 6 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write failing tests first (TDD)** (AC: 1, 2, 4)
+  - [x] In `skills/core-skills.test.ts` (fresh registry + temp DB): assert each of the three skills resolves and is reachable via `POST /skills/:name`; then assert the **side-effects** (AC 4): after `create-board` a `board` row exists; after `add-item` a `status=pending` item exists; after `tag`, an **FTS query for the new tag returns the item** (AC 2 — exercise the index, not just read the field).
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement the `tag` skill (fully specified here)** (AC: 2)
+  - [x] `skills/tag.ts`: `inputSchema { itemId, tags: string[] }`, `outputSchema { itemId, tags }`. `run` loads the item via `ctx.db`, updates its `tags` field, and writes through the **typed item-write helper (Story 1.4 — the FTS-maintaining write)** so `search_blob`/FTS refresh. The proof (Task 1) is an FTS query returning the item, not a column read.
+- [x] **Task 3 — Implement `create-board` (reuse 1.2; persistence primitive only)** (AC: 3)
+  - [x] `skills/create-board.ts`: `inputSchema` = a board descriptor validated against **Story 1.2's descriptor schema + board-insert helper** — REUSE them, do not fork (same wrap-not-fork rule as 3.3, so there aren't two board-insert paths drifting from 1.2's seed). `run` validates (closed field-type set) and inserts a `board` row. The composer (Epic 10) builds the descriptor from NL and calls this skill on accept — keep `create-board` the persistence primitive, not the NL generator.
+- [x] **Task 4 — Implement `add-item` (create pending item ONLY; no enqueue)** (AC: 3)
+  - [x] `skills/add-item.ts`: `inputSchema { boardId, source, fields?: z.record(z.unknown()) }` (freeform `fields` is descriptor-shaped — `z.record(z.unknown())`, not `any`), `outputSchema { itemId, status }`. `run` creates an `item` under the board at `status=pending` via the typed item-write helper — and **does NOT enqueue** any capture/enrichment job (no worker drains the queue until 5.1; no capture adapter until Epic 6). Leave a documented seam (a clearly-commented extension point) where Epic 6 adds the enqueue. Do NOT half-wire an enqueue against a non-existent worker/adapter.
+- [x] **Task 5 — Register all three at boot** (AC: 1)
+  - [x] Add the three to `registerAllSkills(registry)`. Confirm each is invokable via the 3.2 route.
+- [x] **Task 6 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -86,10 +86,29 @@ so that AD11 holds uniformly and the UI drives them through the one generic rout
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 171 pass / 0 fail (166 prior + 5 new core-skill tests). No `./data` pollution. **Epic 3 complete.**
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied. End-to-end tested through the real `POST /skills/:name` route with an injected fresh registry + temp DB.
+- **`create-board`** (persistence primitive): input `{ id, name, descriptor: BoardDescriptorSchema }` — REUSES Story 1.2's descriptor schema (route gives a 400 on an off-set field type) and a new shared **`insertBoard`** helper extracted into `db/seed.ts` (seed + create-board now share ONE board-insert path — no drift). Throws on a duplicate id. NL→descriptor generation left to Epic 10.
+- **`add-item`** (pending item only): input `{ boardId, source?, fields?: z.record(z.unknown()) }`, output `{ itemId, status }`. Generates a UUID, writes a `status=pending` item via `writeItem`. **Does NOT enqueue** any capture/enrichment job — explicit `// Epic 6 seam` comment marks where the enqueue lands once the worker (5.1) + adapter (Epic 6) exist. Validates the board exists.
+- **`tag`** (complete behavior, no later home): input `{ itemId, tags }`, output `{ itemId, tags }`. Stores tags under the board descriptor's first `type:'tags'` field (inspiration `meta.tags`, library `topics`, generic `tags` fallback), passes the FULL merged item to `writeItem` so `search_blob`/FTS refresh and title/notes aren't dropped. **Load-bearing proof:** the test asserts an FTS query for the new tag returns the item (index refreshed), not just a column read.
+- **All three registered** in `registerAllSkills` → invokable via the generic route. Real zod I/O (no `any`).
+- **Boundary discipline kept:** no capture, enrichment, or NL composer built here — only contracts + minimal correct v1 `run` (+ tag's full behavior).
+
 ### File List
+
+- `skills/create-board.ts`, `skills/add-item.ts`, `skills/tag.ts` (new) — the three skills.
+- `skills/core-skills.test.ts` (new) — 5 end-to-end side-effect tests (board row, pending item, FTS-after-tag, invalid descriptor 400, registration).
+- `db/seed.ts` (modified) — extracted shared `insertBoard` helper (reused by seed + create-board).
+- `skills/registry.ts` (modified) — registers create-board/add-item/tag.
+- `package.json` (modified) — appended the core-skills test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 3.4 implemented: create-board (reuses descriptor schema + shared insertBoard), add-item (pending item, no-enqueue seam), tag (FTS-refreshing). Epic 3 complete. Status → review.
