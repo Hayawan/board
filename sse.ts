@@ -51,7 +51,10 @@ export class StatusHub {
       try {
         sub.sink.write(frame);
       } catch {
-        this.subs.delete(sub); // dead stream — drop it
+        // Backstop only: a real ServerResponse.write() after disconnect returns false
+        // (doesn't throw), so the `close`/`error` handler in startSseStream is what
+        // actually cleans up. This drop covers a sink that does throw.
+        this.subs.delete(sub);
       }
     }
   }
@@ -69,7 +72,11 @@ const HEARTBEAT_MS = 15_000;
 // Minimal shapes so this is unit-testable with fakes (no real Fastify/socket).
 interface SseReply {
   hijack(): void;
-  raw: { writeHead(code: number, headers: Record<string, string>): void; write(chunk: string): void };
+  raw: {
+    writeHead(code: number, headers: Record<string, string>): void;
+    write(chunk: string): void;
+    on(event: 'error', cb: () => void): void;
+  };
 }
 interface SseReq {
   raw: { on(event: 'close', cb: () => void): void };
@@ -107,8 +114,12 @@ export function startSseStream(
   }, HEARTBEAT_MS);
   if (typeof heartbeat.unref === 'function') heartbeat.unref();
 
-  req.raw.on('close', () => {
+  const cleanup = (): void => {
     clearInterval(heartbeat);
     unsubscribe();
-  });
+  };
+  req.raw.on('close', cleanup);
+  // An async socket 'error' (e.g. in the disconnect→publish race) with no listener
+  // can surface as an unhandled error and crash the process — register one.
+  reply.raw.on('error', cleanup);
 }

@@ -62,6 +62,7 @@ describe('startSseStream (Story 5.3)', () => {
       raw: {
         writeHead: (code: number, headers: Record<string, string>) => { head = { code, headers }; },
         write: (s: string) => writes.push(s),
+        on: () => {}, // error listener (Story 5.3 review hardening)
       },
     };
     const req = { raw: { on: (ev: string, cb: () => void) => { if (ev === 'close') closeHandler = cb; } } };
