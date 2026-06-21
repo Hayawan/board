@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { boards, items, type NewAsset } from '../db/schema.js';
 import { writeItem } from '../db/queue.js';
 import { createUrlScreenshotAdapter } from './url-screenshot.js';
+import { createUrlReadableAdapter } from './url-readable.js';
 import { SYSTEM_COLUMNS, type BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from '../db/index.js';
 
@@ -86,7 +87,8 @@ export const captureRegistry = createCaptureRegistry();
 /** Populate a registry with the v1 capture adapters (6.2–6.4 add here). */
 export function registerAllCaptureAdapters(registry: CaptureRegistry): void {
   registry.register(createUrlScreenshotAdapter()); // Story 6.2 (url-screenshot)
-  // url-readable (6.3), manual-upload (6.4) register here.
+  registry.register(createUrlReadableAdapter()); // Story 6.3 (url-readable)
+  // manual-upload (6.4) registers here.
 }
 
 /** Resolve the adapter for an ingest_mode and run it. Unknown mode → clear error. */

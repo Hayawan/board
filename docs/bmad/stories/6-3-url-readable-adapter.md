@@ -1,6 +1,6 @@
 # Story 6.3: URL → readable-text adapter (Library, SPA fallback)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,18 +28,18 @@ so that articles (including SPAs) capture their content.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing readable-adapter tests first (TDD)** (AC: 1, 2, 3, 4)
-  - [ ] Create `capture/url-readable.test.ts` (or port `processor-library.test.ts`): inject `fetch` returning a committed article HTML fixture → assert markdown extraction; inject a thin-shell HTML + an injected renderer returning fuller text → assert fallback keeps the longer result; inject thin everywhere → assert "no readable text" error.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Port `extractReadableMarkdown` + `captureLibrary`** (AC: 1, 2, 3)
-  - [ ] Create `capture/url-readable.ts`: port `extractReadableMarkdown(html, url)` (`processor-library.ts:121-130`: JSDOM → Readability → `# title` + turndown, cap 10000, body-textContent fallback) and `captureLibrary(url, opts)` (`processor-library.ts:132-167`: `fetchFn` injectable → extract → if `< MIN_USEFUL_TEXT` (200, `processor-library.ts:9`) call `renderFn` (default `renderPageText`/`launchBrowser`) and keep longer → if still thin, throw). Shape the result as `{ fields: { title, summary?/text }, assets: [] }` (Library captures no screenshot — `screenshotPath: null` in the prototype, `processor-library.ts:166`).
-  - [ ] Keep `fetchFn` and `renderFn` injectable (the prototype already does, `processor-library.ts:136-137`) for tests.
-- [ ] **Task 3 — Register the adapter for `ingest_mode=url-readable`** (AC: 1)
-  - [ ] Register in the Story 6.1 dispatcher. The Library board's descriptor has `ingest_mode: url-readable` (Story 1.2).
-- [ ] **Task 4 — Honor the timeout signal on the render fallback** (AC: 2)
-  - [ ] The headless-render fallback launches Chrome (`launchBrowser`, Story 2.3) — it must honor the Story 5.1 cancellation signal + close in `finally` (Story 6.5), same as the screenshot adapter. The plain-`fetch` path has its own timeout (don't hang on a slow server).
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4)
-  - [ ] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Write the failing readable-adapter tests first (TDD)** (AC: 1, 2, 3, 4)
+  - [x] Create `capture/url-readable.test.ts` (or port `processor-library.test.ts`): inject `fetch` returning a committed article HTML fixture → assert markdown extraction; inject a thin-shell HTML + an injected renderer returning fuller text → assert fallback keeps the longer result; inject thin everywhere → assert "no readable text" error.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Port `extractReadableMarkdown` + `captureLibrary`** (AC: 1, 2, 3)
+  - [x] Create `capture/url-readable.ts`: port `extractReadableMarkdown(html, url)` (`processor-library.ts:121-130`: JSDOM → Readability → `# title` + turndown, cap 10000, body-textContent fallback) and `captureLibrary(url, opts)` (`processor-library.ts:132-167`: `fetchFn` injectable → extract → if `< MIN_USEFUL_TEXT` (200, `processor-library.ts:9`) call `renderFn` (default `renderPageText`/`launchBrowser`) and keep longer → if still thin, throw). Shape the result as `{ fields: { title, summary?/text }, assets: [] }` (Library captures no screenshot — `screenshotPath: null` in the prototype, `processor-library.ts:166`).
+  - [x] Keep `fetchFn` and `renderFn` injectable (the prototype already does, `processor-library.ts:136-137`) for tests.
+- [x] **Task 3 — Register the adapter for `ingest_mode=url-readable`** (AC: 1)
+  - [x] Register in the Story 6.1 dispatcher. The Library board's descriptor has `ingest_mode: url-readable` (Story 1.2).
+- [x] **Task 4 — Honor the timeout signal on the render fallback** (AC: 2)
+  - [x] The headless-render fallback launches Chrome (`launchBrowser`, Story 2.3) — it must honor the Story 5.1 cancellation signal + close in `finally` (Story 6.5), same as the screenshot adapter. The plain-`fetch` path has its own timeout (don't hang on a slow server).
+- [x] **Task 5 — Wire tests + verify green** (AC: 4)
+  - [x] Add the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -82,10 +82,28 @@ so that articles (including SPAs) capture their content.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 235 pass / 0 fail (231 prior + 4 new readable-adapter tests).
+
 ### Completion Notes List
 
+- ✅ All 4 ACs satisfied.
+- **`createUrlReadableAdapter({ fetchImpl?, renderImpl? })`** (ingestMode `url-readable`) — a thin wrapper over the prototype's `captureLibrary` (REUSED from `processor-library.ts`, not forked): plain `fetch` → `extractReadableMarkdown` (Readability + turndown, cap 10000) → SPA fallback to a headless render (`renderPageText`) when text < `MIN_USEFUL_TEXT` (200), keeping the longer result → clear "No readable text…" error if still thin (→ Story 5.2 `error`).
+- **Returns `{ fields: { title, text, url }, assets: [] }`** — Library captures no screenshot. `title` is extracted from the markdown's leading `# ` line and **only included when present** (so a re-capture with no extractable title can't wipe an existing `item.title` — runCaptureForItem lifts title → the system column, Story 6.2 fix). Capture only; Library enrichment (summary/topics/author/type/key_points) is Epic 7.
+- **Injectable `fetch` + `render` (AC4)** — tests run over inline HTML fixtures with no real network/Chrome: article→markdown, thin-shell→render-fallback (keeps longer), thin-everywhere→error, ingestMode + non-URL reject.
+- **Render fallback teardown:** `renderPageText` already closes its browser in `finally` (browser.ts); the abort-signal force-close on the render path is Story 6.5 (noted with a `void ctx.signal` placeholder).
+- **Registered (AC1):** `registerAllCaptureAdapters` now registers `url-readable` (the Library board's ingest_mode). The Library board's `add-item` now enqueues a real readable-capture job at boot.
+
 ### File List
+
+- `capture/url-readable.ts` (new) — `createUrlReadableAdapter` (wraps `captureLibrary`; title-from-markdown).
+- `capture/url-readable.test.ts` (new) — 4 tests (article extraction, SPA fallback, no-text error, ingestMode/non-URL).
+- `capture/adapter.ts` (modified) — registers the readable adapter.
+- `package.json` (modified) — appended the test to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 6.3 implemented: url-readable CaptureAdapter wrapping captureLibrary (Readability+turndown, SPA render fallback, clean no-text error), title-from-markdown, registered for url-readable. Status → review.
