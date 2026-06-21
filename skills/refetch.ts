@@ -14,13 +14,15 @@ export const refetchSkill = defineSkill(
   z.object({ itemId: z.string().min(1) }),
   z.object({ itemId: z.string(), status: z.string() }),
   async (input, ctx) => {
-    // Don't await — capture (Chrome) + enrich (LLM) run on the worker.
+    // Don't await — capture (Chrome) + enrich (LLM) run on the worker. Guard the
+    // fire-and-forget: refetchItem rejects (unknown/deleted item) BEFORE the worker's
+    // error-swallowing layer, so an uncaught rejection here would crash the worker.
     void refetchItem(ctx.db, {
       itemId: input.itemId,
       registry: captureRegistry,
       llm: ctx.llm,
       screenshotsDir: config.screenshotsDir,
-    });
+    }).catch((err) => ctx.logger.error(`refetch "${input.itemId}" failed to start: ${(err as Error).message}`));
     return { itemId: input.itemId, status: 'processing' };
   },
 );
