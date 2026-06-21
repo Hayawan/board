@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
+import { config } from '../config.js';
 import * as schema from './schema.js';
 
 // Story 1.1 — SQLite connection + WAL + FK enforcement + idempotent bootstrap.
@@ -109,19 +110,12 @@ export function initDb(path: string): DbHandle {
   return { db, sqlite };
 }
 
-// Placeholder DB path resolution until Story 2.2 lands the real DATA_DIR loader.
-// Keep this coupling to a single spot so 2.2 is a one-line change. // Story 2.2
-function resolveDbPath(): string {
-  const dataDir = process.env.DATA_DIR ?? './data';
-  return `${dataDir}/board.db`;
-}
-
 let _handle: DbHandle | undefined;
 
-/** Lazily-initialized process-wide DB handle (real DATA_DIR wiring is Story 2.2). */
+/** Lazily-initialized process-wide DB handle, rooted at `config.dbPath` (DATA_DIR). */
 export function getDb(): DbHandle {
   if (!_handle) {
-    _handle = initDb(resolveDbPath());
+    _handle = initDb(config.dbPath);
   }
   return _handle;
 }

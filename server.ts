@@ -13,6 +13,7 @@ import {
   mutateCollection,
   type CollectionMeta,
 } from "./storage.js";
+import { config, ensureDataDir } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAXONOMY_FILE = path.join(__dirname, "taxonomy.json");
@@ -151,7 +152,8 @@ function handlePatchItem(
 function handleDeleteItem(
   cid: string,
   itemId: string,
-  reply: FastifyReply
+  reply: FastifyReply,
+  screenshotsDir: string
 ): null | { error: string } {
   const col = resolveCollection(cid, reply);
   if (!col) return { error: `Unknown collection: "${cid}"` };
@@ -167,9 +169,10 @@ function handleDeleteItem(
 
   if (!removed) { reply.status(404); return { error: "Not found" }; }
 
-  // Only clean up screenshot files for visual (grid) collections
+  // Only clean up screenshot files for visual (grid) collections. Story 2.2:
+  // screenshots live under DATA_DIR/screenshots — resolve by basename there.
   if (col.view === "grid" && removed.screenshot) {
-    const screenshotPath = path.join(__dirname, removed.screenshot as string);
+    const screenshotPath = path.join(screenshotsDir, path.basename(removed.screenshot as string));
     if (fs.existsSync(screenshotPath)) fs.unlinkSync(screenshotPath);
   }
 
@@ -201,7 +204,8 @@ function handleScreenshot(
   cid: string,
   itemId: string,
   body: { dataUrl?: string },
-  reply: FastifyReply
+  reply: FastifyReply,
+  screenshotsDir: string
 ): Record<string, unknown> | { error: string } | null {
   const col = resolveCollection(cid, reply);
   if (!col) return { error: `Unknown collection: "${cid}"` };
@@ -225,7 +229,8 @@ function handleScreenshot(
       if (idx === -1) return undefined;
 
       const relPath = (items[idx].screenshot as string | null) ?? `screenshots/${itemId}.png`;
-      const absPath = path.join(__dirname, relPath);
+      // Story 2.2: write under DATA_DIR/screenshots (by basename), not the app tree.
+      const absPath = path.join(screenshotsDir, path.basename(relPath));
       fs.mkdirSync(path.dirname(absPath), { recursive: true });
       fs.writeFileSync(absPath, buf);
 
@@ -243,7 +248,14 @@ function handleScreenshot(
 
 // --- Server factory ---
 
-export async function buildServer() {
+export async function buildServer(opts: { screenshotsDir?: string } = {}) {
+  // Story 2.2: screenshots resolve from DATA_DIR (config.screenshotsDir); tests
+  // inject a temp dir so they never pollute the real data dir. The dir is created
+  // at real boot via ensureDataDir() (the entrypoint), and handleScreenshot mkdirs
+  // its write target — buildServer itself does not create dirs (so opt-less tests
+  // don't materialize ./data).
+  const screenshotsDir = opts.screenshotsDir ?? config.screenshotsDir;
+
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024 });
 
   await app.register(fastifyStatic, {
@@ -251,6 +263,23 @@ export async function buildServer() {
     prefix: "/",
     index: false,
     serve: true,
+  });
+
+  // Screenshots now live OUTSIDE __dirname (under DATA_DIR), so the static root no
+  // longer serves them. Stream them from screenshotsDir at the /screenshots/ prefix
+  // the frontend still requests. A plain route (not a 2nd @fastify/static) avoids
+  // the decorateReply double-registration crash and lets us guard path traversal.
+  app.get<{ Params: { "*": string } }>("/screenshots/*", async (req, reply) => {
+    const rel = path.basename(req.params["*"]); // basename → no traversal
+    const abs = path.join(screenshotsDir, rel);
+    if (!fs.existsSync(abs)) { reply.status(404); return { error: "Not found" }; }
+    const ext = path.extname(abs).toLowerCase();
+    const type =
+      ext === ".png" ? "image/png" :
+      ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+      ext === ".webp" ? "image/webp" : "application/octet-stream";
+    reply.type(type);
+    return reply.send(fs.createReadStream(abs));
   });
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
@@ -282,7 +311,7 @@ export async function buildServer() {
 
   app.delete<{ Params: { cid: string; id: string } }>(
     "/api/collections/:cid/items/:id",
-    async (req, reply) => handleDeleteItem(req.params.cid, req.params.id, reply)
+    async (req, reply) => handleDeleteItem(req.params.cid, req.params.id, reply, screenshotsDir)
   );
 
   app.post<{ Params: { cid: string; id: string }; Body: { instructions?: string; analysisAgent?: string } }>(
@@ -292,7 +321,7 @@ export async function buildServer() {
 
   app.post<{ Params: { cid: string; id: string }; Body: { dataUrl?: string } }>(
     "/api/collections/:cid/items/:id/screenshot",
-    async (req, reply) => handleScreenshot(req.params.cid, req.params.id, req.body, reply)
+    async (req, reply) => handleScreenshot(req.params.cid, req.params.id, req.body, reply, screenshotsDir)
   );
 
   // --- Legacy aliases (delegate to collection handlers with cid="inspiration") ---
@@ -311,7 +340,7 @@ export async function buildServer() {
 
   app.delete<{ Params: { id: string } }>(
     "/api/bookmarks/:id",
-    async (req, reply) => handleDeleteItem("inspiration", req.params.id, reply)
+    async (req, reply) => handleDeleteItem("inspiration", req.params.id, reply, screenshotsDir)
   );
 
   app.post<{ Params: { id: string }; Body: { instructions?: string; analysisAgent?: string } }>(
@@ -321,7 +350,7 @@ export async function buildServer() {
 
   app.post<{ Params: { id: string }; Body: { dataUrl?: string } }>(
     "/api/bookmarks/:id/screenshot",
-    async (req, reply) => handleScreenshot("inspiration", req.params.id, req.body, reply)
+    async (req, reply) => handleScreenshot("inspiration", req.params.id, req.body, reply, screenshotsDir)
   );
 
   return app;
@@ -329,6 +358,7 @@ export async function buildServer() {
 
 // Entrypoint guard — only listen when run directly
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  ensureDataDir(); // Story 2.2: create DATA_DIR + screenshots on real boot (AC 2)
   const app = await buildServer();
   await app.listen({ port: 3141, host: "127.0.0.1" });
   console.log("🎨  Board running at http://localhost:3141");

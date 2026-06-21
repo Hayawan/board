@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { inspect } from 'node:util';
 
 // Story 2.1 — the single env-driven config loader. Every deployment knob is read
@@ -25,6 +27,10 @@ export interface Config {
   port: number;
   host: string;
   dataDir: string;
+  /** Derived: the SQLite DB file, rooted under DATA_DIR (Story 2.2). */
+  dbPath: string;
+  /** Derived: the screenshots directory, rooted under DATA_DIR (Story 2.2). */
+  screenshotsDir: string;
   chromePath: string | null;
   provider: ProviderConfig;
   /** false = no-AI (enrichment disabled) — the NFR-4 graceful default. */
@@ -89,10 +95,16 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     configurable: true,
   });
 
+  const dataDir = clean(env.DATA_DIR) ?? './data';
   const config: Config = {
     port: parsePort(env.PORT, 3141),
     host: clean(env.HOST) ?? '127.0.0.1',
-    dataDir: clean(env.DATA_DIR) ?? './data',
+    dataDir,
+    // Data lives under DATA_DIR, separate from app code, so upgrades never nuke it
+    // (FR-21/NFR-6). Stored asset paths stay relative ("screenshots/<id>.png") and
+    // resolve under screenshotsDir; only the resolution base moves here.
+    dbPath: path.join(dataDir, 'board.db'),
+    screenshotsDir: path.join(dataDir, 'screenshots'),
     chromePath: clean(env.CHROME_PATH) ?? null,
     provider,
     // Enabled when a transport is configured (agent OR base-URL/key). A model name
@@ -123,6 +135,15 @@ function attachRedaction(config: Config): void {
     value: () => redact(config),
     enumerable: false,
   });
+}
+
+/**
+ * Idempotently create DATA_DIR + the screenshots subdir so a fresh install boots
+ * with zero manual setup (NFR-4/UJ-3). One place, not scattered.
+ */
+export function ensureDataDir(cfg: Config = config): void {
+  mkdirSync(cfg.dataDir, { recursive: true });
+  mkdirSync(cfg.screenshotsDir, { recursive: true });
 }
 
 /** Resolved singleton for app code (reads the real process.env explicitly). */

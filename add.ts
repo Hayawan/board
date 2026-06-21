@@ -9,10 +9,12 @@ import { getCollection, mutateCollection, type CollectionMeta } from "./storage.
 import { registerProcessor, getProcessor, type Processor, type Captured } from "./processors.js";
 import "./processor-library.js"; // registers the library processor
 import { CHROME_PATH } from "./browser.js";
+import { config } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAXONOMY_FILE = path.join(__dirname, "taxonomy.json");
-const SCREENSHOTS_DIR = path.join(__dirname, "screenshots");
+// Story 2.2: screenshots live under DATA_DIR (config.screenshotsDir), not the app tree.
+const SCREENSHOTS_DIR = config.screenshotsDir;
 
 const TAXONOMY = JSON.parse(fs.readFileSync(TAXONOMY_FILE, "utf-8")) as {
   audience: string[];
@@ -508,6 +510,9 @@ const inspirationProcessor: Processor = {
 
   async capture(url: string, ctx: { id: string }): Promise<Captured> {
     const outputPath = path.join(SCREENSHOTS_DIR, `${ctx.id}.png`);
+    // Story 2.2: create the screenshots dir only when actually capturing one
+    // (visual collections), so non-visual runs don't materialize DATA_DIR.
+    fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
     const text = await screenshot(url, outputPath);
     const screenshotPath = fs.existsSync(outputPath) ? outputPath : null;
     return { text, screenshotPath };
@@ -592,7 +597,7 @@ export async function runAdd(
   const hostname = parsed.hostname.replace(/^www\./, "").replace(/\./g, "-");
   const id = updateId ?? `${hostname}-${Date.now()}`;
 
-  fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  // (Screenshots dir is created lazily by the visual processor's capture — Story 2.2.)
   console.log(`📸  Capturing ${cleanUrl}...`);
   const captureFn = deps.captureOverride ?? ((u, ctx) => processor.capture(u, ctx));
   const captured = await captureFn(cleanUrl, { id });

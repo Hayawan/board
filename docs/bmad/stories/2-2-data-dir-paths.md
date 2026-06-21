@@ -1,6 +1,6 @@
 # Story 2.2: DATA_DIR-rooted persistent paths
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,24 +31,24 @@ so that upgrading the code never deletes my data.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing path-derivation test first (TDD)** (AC: 1, 2, 3)
-  - [ ] Create `paths.test.ts` (or extend `config.test.ts`): point config at a temp `DATA_DIR`; assert `dbPath` and `screenshotsDir` resolve under it; assert the dir is created when absent.
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Add path derivation to config** (AC: 1)
-  - [ ] In `config.ts` (Story 2.1), derive `dbPath = <DATA_DIR>/board.db` (name TBD) and `screenshotsDir = <DATA_DIR>/screenshots`. Expose them on the config object. Replace the Epic-1 `// Story 2.2` DB-path placeholder in `db/index.ts` with `config.dbPath`.
-- [ ] **Task 3 — Ensure-dir on boot** (AC: 2)
-  - [ ] On startup, `mkdir -p` the `DATA_DIR` and `screenshots` subdir (idempotent). Do this in one place (config init or a small `ensureDataDir()`), not scattered.
-- [ ] **Task 4 — Repoint ALL screenshot read/write/serve sites to `screenshotsDir`** (AC: 1) — *there are FIVE code-tree-relative sites, not one; missing any splits screenshots between DATA_DIR and the app tree.*
-  - [ ] **Keep stored `asset.path`/`screenshot` values RELATIVE** (`screenshots/<id>.png`) — Story 1.5 already commits real rows with this verbatim relative format (1.5 stores `asset.path` as `screenshots/<id>.png`), and the frontend builds the URL as `/${b.screenshot}` (`index.html:1979-1980` `shotSrc`). So do NOT change the stored format and do NOT switch to absolute — that would break already-imported rows and the frontend contract. This story changes only the **resolution base** (resolve the relative path under `config.screenshotsDir`).
-  - [ ] Repoint every WRITE/READ/UNLINK that currently joins `__dirname`:
+- [x] **Task 1 — Write the failing path-derivation test first (TDD)** (AC: 1, 2, 3)
+  - [x] Create `paths.test.ts` (or extend `config.test.ts`): point config at a temp `DATA_DIR`; assert `dbPath` and `screenshotsDir` resolve under it; assert the dir is created when absent.
+  - [x] Run; confirm red.
+- [x] **Task 2 — Add path derivation to config** (AC: 1)
+  - [x] In `config.ts` (Story 2.1), derive `dbPath = <DATA_DIR>/board.db` (name TBD) and `screenshotsDir = <DATA_DIR>/screenshots`. Expose them on the config object. Replace the Epic-1 `// Story 2.2` DB-path placeholder in `db/index.ts` with `config.dbPath`.
+- [x] **Task 3 — Ensure-dir on boot** (AC: 2)
+  - [x] On startup, `mkdir -p` the `DATA_DIR` and `screenshots` subdir (idempotent). Do this in one place (config init or a small `ensureDataDir()`), not scattered.
+- [x] **Task 4 — Repoint ALL screenshot read/write/serve sites to `screenshotsDir`** (AC: 1) — *there are FIVE code-tree-relative sites, not one; missing any splits screenshots between DATA_DIR and the app tree.*
+  - [x] **Keep stored `asset.path`/`screenshot` values RELATIVE** (`screenshots/<id>.png`) — Story 1.5 already commits real rows with this verbatim relative format (1.5 stores `asset.path` as `screenshots/<id>.png`), and the frontend builds the URL as `/${b.screenshot}` (`index.html:1979-1980` `shotSrc`). So do NOT change the stored format and do NOT switch to absolute — that would break already-imported rows and the frontend contract. This story changes only the **resolution base** (resolve the relative path under `config.screenshotsDir`).
+  - [x] Repoint every WRITE/READ/UNLINK that currently joins `__dirname`:
     - `add.ts:15` `SCREENSHOTS_DIR = path.join(__dirname, "screenshots")` → derive from `config.screenshotsDir`.
     - `add.ts:524` and `add.ts:538` — the stored literal `screenshots/${id}.png` (keep the stored string, but ensure the actual file write target is under `screenshotsDir`).
     - `server.ts:227-230` `handleScreenshot` — `absPath = path.join(__dirname, relPath); fs.mkdirSync; fs.writeFileSync(absPath, buf)` → write under `screenshotsDir` (this is the manual-upload write site; missing it sends uploads to the app tree).
     - `server.ts:172` — the delete handler `path.join(__dirname, removed.screenshot)` unlink → resolve under `screenshotsDir`.
     - `server.ts:233` — stores `screenshot: relPath` (keep relative).
-  - [ ] **Static serving:** screenshots now live OUTSIDE `__dirname`, so the existing `@fastify/static` root (`server.ts:249-254`) no longer serves them. Add serving for `screenshotsDir` at prefix `/screenshots/` so the frontend's `/screenshots/foo.png` URL still resolves. **Do NOT register `@fastify/static` a second time naively — it throws** (`decorateReply`/`sendFile` already decorated). Either pass `decorateReply: false` on the second registration, or add a plain `GET /screenshots/*` route that streams the file from `screenshotsDir`. Document which.
-- [ ] **Task 5 — Wire tests + verify green** (AC: 3)
-  - [ ] Add the new test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+  - [x] **Static serving:** screenshots now live OUTSIDE `__dirname`, so the existing `@fastify/static` root (`server.ts:249-254`) no longer serves them. Add serving for `screenshotsDir` at prefix `/screenshots/` so the frontend's `/screenshots/foo.png` URL still resolves. **Do NOT register `@fastify/static` a second time naively — it throws** (`decorateReply`/`sendFile` already decorated). Either pass `decorateReply: false` on the second registration, or add a plain `GET /screenshots/*` route that streams the file from `screenshotsDir`. Document which.
+- [x] **Task 5 — Wire tests + verify green** (AC: 3)
+  - [x] Add the new test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -98,10 +98,33 @@ so that upgrading the code never deletes my data.
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
+- `npm test` → 141 pass / 0 fail (139 prior + 2 new paths tests; the existing server screenshot test was retrofitted, not added).
+- Verified zero pollution: a full `npm test` leaves no `./data` dir and no `screenshots/bm-shot-test.png` in the app tree.
+
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied.
+- **`config.ts` derives `dbPath = <DATA_DIR>/board.db` and `screenshotsDir = <DATA_DIR>/screenshots`** + `ensureDataDir(cfg)` (idempotent mkdir of both). AC3 test asserts both derive under DATA_DIR AND neither resolves under the repo/`__dirname` (the app-tree regression, asserted negatively).
+- **`db/index.ts`** `getDb()` now uses `config.dbPath` (the `// Story 2.2` placeholder removed).
+- **All five screenshot sites repointed:** `add.ts:15` `SCREENSHOTS_DIR = config.screenshotsDir`; `server.ts` delete-unlink + manual-upload write now resolve under `screenshotsDir`. **Stored path stays relative** (`screenshots/<id>.png`); writes/reads resolve via `path.join(screenshotsDir, path.basename(relPath))` to avoid the double-`screenshots/` trap.
+- **Static serving (AC4):** screenshots live outside `__dirname` now, so a dedicated `GET /screenshots/*` stream route serves them from `screenshotsDir` (chosen over a 2nd `@fastify/static` to avoid the `decorateReply` double-registration crash, and to guard path traversal via `basename`). Sets correct image content-type. Proven by the inject() 200+bytes test.
+- **Injection seam:** `buildServer({ screenshotsDir })` threads a per-instance dir (not a module global) into both handlers + the serving route. The existing `server.test.ts` screenshot test retrofitted to a temp dir (AC5), asserting the file lands in the temp dir and NOT the app tree, plus the `/screenshots/<file>` 200 serving (AC4).
+- **No-pollution fix:** `buildServer` no longer mkdirs (so opt-less tests don't materialize `./data`); dir creation moved to `ensureDataDir()` at the real-boot entrypoint (AC2), and `add.ts` now mkdirs the screenshots dir **lazily in the visual processor's capture** (not unconditionally at the top of every run — non-visual library runs no longer create `DATA_DIR`).
+
 ### File List
+
+- `config.ts` (modified) — `dbPath`/`screenshotsDir` derivation + `ensureDataDir()`.
+- `paths.test.ts` (new) — 2 tests: path derivation under DATA_DIR (+ negative app-tree assertion), dir creation.
+- `db/index.ts` (modified) — `getDb()` uses `config.dbPath`.
+- `add.ts` (modified) — `SCREENSHOTS_DIR` from config; lazy mkdir in visual capture.
+- `server.ts` (modified) — `buildServer({screenshotsDir})`, `/screenshots/*` serving route, repointed delete/upload handlers, `ensureDataDir()` on boot.
+- `server.test.ts` (modified) — screenshot test retrofitted to temp dir + AC4/AC5 assertions; `os` import.
+- `package.json` (modified) — appended `paths.test.ts` to the `test` script.
+
+### Change Log
+
+- 2026-06-20 — Story 2.2 implemented: DATA_DIR-rooted dbPath + screenshotsDir, ensureDataDir on boot, all five screenshot sites repointed under DATA_DIR with a /screenshots/* serving route, tests prove no app-tree leakage. Status → review.

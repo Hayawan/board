@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -144,10 +145,13 @@ test("POST /api/collections/library/items/:id/screenshot returns 400 for non-vis
 
 test("POST /api/collections/inspiration/items/:id/screenshot passes visual guard", async () => {
   const bmSnapshot = fs.readFileSync(BOOKMARKS_FILE, "utf-8");
+  // Story 2.2 (AC 5): inject a temp screenshotsDir so the write never pollutes the
+  // real DATA_DIR / app tree.
+  const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-shot-"));
   try {
     const testItem = { id: "bm-shot-test", url: "https://example.com", added: "2025-01-01", screenshot: null, title: "T", meta: {}, design: {}, reflection: {}, analysis_agent: "claude", analysis_model: null };
     saveCollection("inspiration", [testItem]);
-    const app = await buildServer();
+    const app = await buildServer({ screenshotsDir: shotDir });
     const res = await app.inject({
       method: "POST",
       url: `/api/collections/inspiration/items/${testItem.id}/screenshot`,
@@ -157,8 +161,20 @@ test("POST /api/collections/inspiration/items/:id/screenshot passes visual guard
     // Should not be 400 (screenshot guard allows visual collection)
     assert.ok(res.statusCode !== 400 || (res.statusCode === 400 && !JSON.parse(res.body).error.includes("not supported")),
       "inspiration screenshot should not be blocked by visual guard");
+
+    // AC 5 — the file landed under the temp screenshotsDir, NOT the app tree.
+    const writtenPath = path.join(shotDir, "bm-shot-test.png");
+    assert.ok(fs.existsSync(writtenPath), "screenshot must be written under the injected screenshotsDir");
+    assert.ok(!fs.existsSync(path.join(__dirname, "screenshots", "bm-shot-test.png")), "must not write into the app tree");
+
+    // AC 4 — the screenshot is served at /screenshots/<file> (assets don't 404).
+    const served = await app.inject({ method: "GET", url: "/screenshots/bm-shot-test.png" });
+    assert.equal(served.statusCode, 200, "served screenshot should be 200");
+    assert.equal(served.headers["content-type"], "image/png");
+    assert.ok(served.rawPayload.length > 0, "served screenshot should have bytes");
   } finally {
     fs.writeFileSync(BOOKMARKS_FILE, bmSnapshot);
+    fs.rmSync(shotDir, { recursive: true, force: true });
   }
 });
 
