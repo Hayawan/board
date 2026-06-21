@@ -133,7 +133,7 @@ claude-opus-4-8[1m] (BMAD dev-story workflow)
 ### Debug Log References
 
 - `npm test` → 112 pass / 0 fail (99 prior + 13 new: 8 descriptor + 5 seed/contract).
-- zod 3.25.76 already installed (no new dependency; no Socket gate needed).
+- zod 3.25.76 used (initially relied on the version resolved transitively via puppeteer-core). **Correction (Story 3.1 review):** zod was NOT a declared dependency at the time — only transitive. It was promoted to a direct, Socket-scored, pinned `dependencies` entry (`zod@3.25.76`: supplyChain 99 / quality 100 / vulnerability 100 / maintenance 92) during Story 3.1's review pass, since the skill platform now rests on it. A puppeteer bump dropping zod would otherwise have broken descriptor/config/skills.
 
 ### Completion Notes List
 
