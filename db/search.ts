@@ -14,7 +14,7 @@ import type { DbHandle } from './index.js';
  * the input as a literal phrase (no operators) is the right behavior for a search box
  * and is syntax-safe (AC4).
  */
-function toFtsPhrase(q: string): string {
+export function toFtsPhrase(q: string): string {
   return '"' + q.replace(/"/g, '""') + '"';
 }
 

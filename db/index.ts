@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS suggestion_override (
   chosen_board_id TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- Story 15.1 — additive saved cross-board lens (IF NOT EXISTS → existing DBs gain it on
+-- next boot; existing tables/rows untouched, NFR-BC). "view" and "order" are SQL
+-- keywords → quoted here (the raw DDL is hand-written; Drizzle escapes its own SQL).
+CREATE TABLE IF NOT EXISTS "view" (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  filter TEXT NOT NULL,
+  "order" TEXT,
+  captions TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 `;
 
 // Story 1.4 — FTS5 over a SINGLE synthetic search_blob (not per-field columns), so

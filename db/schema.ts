@@ -84,9 +84,30 @@ export const suggestionOverrides = sqliteTable('suggestion_override', {
 
 export type SuggestionOverride = typeof suggestionOverrides.$inferSelect;
 
+// Story 15.1 — the additive `view` table: a saved cross-board LENS. A composed board is
+// a row of JSON — `filter` (the live query) + an optional `order` overlay (pinned ids)
+// + optional `captions` — NOT a join table and NOT m2m on `item`. Items keep one
+// canonical home board (single-FK, D12); a view holds no copy of item content. `view`
+// and `order` are SQL keywords — the raw BOOTSTRAP_SQL (db/index.ts) quotes them; Drizzle
+// auto-escapes its own generated SQL.
+export const views = sqliteTable('view', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** The live query that defines membership (resolved dynamically). */
+  filter: text('filter', { mode: 'json' }).notNull(),
+  /** Optional pin/reorder overlay: item-ids that sort first, in this order. */
+  order: text('order', { mode: 'json' }),
+  /** Optional per-item caption overlay. */
+  captions: text('captions', { mode: 'json' }),
+  createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+});
+
 export type Board = typeof boards.$inferSelect;
 export type NewBoard = typeof boards.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type Asset = typeof assets.$inferSelect;
 export type NewAsset = typeof assets.$inferInsert;
+export type View = typeof views.$inferSelect;
+export type NewView = typeof views.$inferInsert;
