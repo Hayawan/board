@@ -325,6 +325,30 @@ test("13.1: POST /api/v1/items with no boardId lands on the Inbox", async () => 
   }
 });
 
+// Story 13.2 — the bookmarklet posts {url, title} with no board → lands in the Inbox
+test("13.2: POST /api/v1/items {url, title} with no board lands a pending item in the Inbox", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      // the bookmarklet sends title best-effort; the server re-derives the canonical
+      // title during cheap capture (13.1), so title is not asserted here. The cheap
+      // guarantee itself is proven confound-free in db/inbox-seed.test.ts (a naive spy
+      // here would be a trivial zero — no capture adapter is registered in tests).
+      body: JSON.stringify({ url: "https://bookmarklet.example", title: "Some Page Title" }),
+    });
+    assert.equal(res.statusCode, 201);
+    const body = JSON.parse(res.body);
+    assert.equal(body.status, "pending");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, body.id)).get().boardId, "inbox");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // AC 1 — missing/blank url → 400 (before the DB is touched)
 test("12.2: POST /api/v1/items with a blank url → 400", async () => {
   const { app, handle, dir } = await seededV1App();

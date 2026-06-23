@@ -1,6 +1,6 @@
 # Story 13.2: Bookmarklet capture client
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,20 +31,19 @@ so that I can save the current tab to my Inbox without leaving the page.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing bookmarklet-payload test first (TDD)** (AC: 1, 2, 5)
-  - [ ] Add a pure builder `buildBookmarklet({ instanceUrl, token })` returning the `javascript:` string. Test it: the string is a valid `javascript:` URL, embeds the configured `instanceUrl`, posts to `/api/v1/items`, sets `Authorization: Bearer <token>`, and sends `{url: location.href, title: document.title}`. Assert it does **not** include a navigation/redirect to the app.
-  - [ ] Run; confirm red (builder does not exist yet).
-- [ ] **Task 2 — Implement the bookmarklet builder** (AC: 1, 2)
-  - [ ] Implement `buildBookmarklet` (minimal, no new deps): a small inline IIFE that `fetch`es `POST {instanceUrl}/api/v1/items` with the bearer header and `{url, title}`, shows a tiny transient confirmation (e.g. a brief banner), and swallows/reports errors without navigating. URL-encode the body; keep the payload compact.
-- [ ] **Task 3 — Write the failing settings/help-surface test (TDD)** (AC: 1, 4)
-  - [ ] Add a route/handler test (inject) that the help surface renders the bookmarklet built from `config` (instance URL + the configured token), and that adding it does **not** alter existing routes (existing route smoke still green).
-  - [ ] Run; confirm red.
-- [ ] **Task 4 — Add the settings/help surface** (AC: 1, 4)
-  - [ ] Serve a small settings/help fragment (or extend the existing UI) that shows the draggable bookmarklet built from `config`. Read-only over config — no new write path. Token is the 12.1 static token (display guidance: treat it like a password).
-- [ ] **Task 5 — Server-side Inbox round-trip test** (AC: 3, 5)
-  - [ ] Inject an authed `POST /api/v1/items {url, title}` (no `boardId`) against a temp DB seeded with the Inbox (13.1); assert the created item is `board_id='inbox'`, returns optimistic `pending`, and the capture path is cheap (spy LLM `complete` count = 0). Reuse 13.1's spy-LLM + fake-adapter fixtures.
-- [ ] **Task 6 — Wire tests + verify green** (AC: 4, 5)
-  - [ ] Add the new test file(s) to the `test` script; run the suite; confirm green and existing suites unaffected.
+- [x] **Task 1 — Write the failing bookmarklet-payload test first (TDD)** (AC: 1, 2, 5)
+  - [x] Pure builder `buildBookmarklet({ instanceUrl, token })` → the `javascript:` string. Test asserts: valid `javascript:` URL, embeds the instance URL, posts to `/api/v1/items`, `Authorization: Bearer <token>`, sends `{url: location.href, title: document.title}`, POST, and a real negative assertion that it does NOT navigate (`!location=`/`assign`/`replace`). Trailing-slash normalization pinned.
+  - [x] Ran; confirmed red.
+- [x] **Task 2 — Implement the bookmarklet builder** (AC: 1, 2)
+  - [x] `capture-clients/bookmarklet.ts` (no new deps): a compact IIFE that `fetch`es `POST {instanceUrl}/api/v1/items` with the bearer header + `{url, title}`, shows a transient in-page banner (success/fail), swallows errors, never navigates. Strings interpolated via `JSON.stringify` (safe escaping).
+- [x] **Task 3 — Write the failing settings/help-surface test (TDD)** (AC: 1, 4)
+  - [x] Inject test: `GET /bookmarklet` serves HTML containing `/api/v1/items` + `TOKEN_PLACEHOLDER`; an existing-route smoke (`GET /api/collections`) stays green. Confirmed red first.
+- [x] **Task 4 — Add the settings/help surface** (AC: 1, 4)
+  - [x] `GET /bookmarklet` serves a small self-contained help page: instance URL derived from the request (proxy-safe), a token input, and a draggable link whose href is rebuilt client-side by substituting the operator's token into the placeholder. **12.1 reconciliation:** the server holds only the token *hash*, never the plaintext — so the page ships a `TOKEN_PLACEHOLDER` and the operator fills their own token in the browser; the plaintext never touches the server. Read-only over config (only `tokenConfigured` boolean).
+- [x] **Task 5 — Server-side Inbox round-trip test** (AC: 3, 5)
+  - [x] `POST /api/v1/items {url, title}` (no `boardId`) → asserts `board_id='inbox'` + optimistic `pending`. **Cheap-enrichment is delegated to 13.1's confound-free discriminating test** (not re-asserted here): in the test harness no capture adapter is registered, so a `complete`-count spy on this route would be a *trivial* zero (the no-adapter confound Quinn flagged in 13.1) — a misleading assertion. Documented inline + in Completion Notes.
+- [x] **Task 6 — Wire tests + verify green** (AC: 4, 5)
+  - [x] Added `capture-clients/bookmarklet.test.ts` to the `test` script; full suite → **377 pass / 0 fail**, existing suites unaffected.
 
 ## Dev Notes
 
@@ -87,10 +86,32 @@ so that I can save the current tab to my Inbox without leaving the page.
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
 ### Debug Log References
+
+- RED → GREEN → full regression: **377 pass / 0 fail**, 59 suites.
 
 ### Completion Notes List
 
+- ✅ All ACs satisfied. The bookmarklet is a pure client of the authed `/api/v1/items` (12.2) — no bespoke save path. It sends no board, so the omitted-board→Inbox default (13.1) routes it; cheap enrichment is inherited from 13.1.
+- **12.1 reconciliation (the key design decision):** 12.1 deliberately discards the plaintext token (holds only the SHA-256 hash), so the server cannot embed a working token. The help page therefore ships a `TOKEN_PLACEHOLDER` and substitutes the operator's own token entirely client-side — the plaintext never touches the server, logs, or `board.db`. This keeps 12.1's security posture intact.
+
+**Party-mode review (Winston security / Quinn QA) — findings addressed before commit:**
+- ✅ [High] **Reflected XSS via the `Host` header** (Winston): `req.headers.host` flowed unescaped into both `<code>${instanceUrl}</code>` (HTML context) and the `JSON.stringify`'d template inside `<script>` (where `JSON.stringify` does NOT escape `/`, so `</script>` breaks out). Fixed with an `htmlEscape` for the HTML context and a `<` → `<` escape for every script-embedded string. Added an XSS regression test injecting a malicious `Host` and asserting no `</script>` breakout / no raw attribute-quote escape. (trustProxy is off, so `req.protocol` is socket-derived, not header-tainted.)
+- ✅ [Med] **AC5 cheap-assertion delegated, now documented** (Quinn): the cheap guarantee is proven confound-free in `db/inbox-seed.test.ts` (tier:cheap skips enrichment even on a fields-bearing board); a `complete`-count spy on the v1 round-trip would be a trivial zero (no adapter registered in tests). Documented the deliberate delegation inline + here, per Quinn — did NOT add a naive spy.
+- ✅ [Low] Clarified the round-trip `title` field with a comment (server re-derives the canonical title during cheap capture; client title is best-effort).
+- 📝 [Low, follow-up] **Server title-drop** (Quinn): `POST /api/v1/items` ignores the client's `title`; capture re-derives it. Tracked for a future 12.2/13.1 pass (title quality can regress on auth-walled/SPA pages where `document.title` is better than a re-fetch).
+
 ### File List
 
+- `capture-clients/bookmarklet.ts` (new) — pure `buildBookmarklet({instanceUrl, token})` + `TOKEN_PLACEHOLDER`.
+- `capture-clients/bookmarklet.test.ts` (new) — payload tests (endpoint/Bearer/url+title/no-nav, slash normalization), `GET /bookmarklet` serve + placeholder + no-regression smoke, and a Host-header XSS regression test.
+- `server.ts` (modified) — `GET /bookmarklet` help-surface route (XSS-safe; instance URL from request; placeholder token).
+- `api/v1.test.ts` (modified) — bookmarklet Inbox round-trip ({url,title}+no-board → inbox+pending).
+- `package.json` (modified) — appended `capture-clients/bookmarklet.test.ts`.
+
 ### Change Log
+
+- 2026-06-23 — Story 13.2 implemented: pure `buildBookmarklet` client + `GET /bookmarklet` help surface (placeholder token, client-side fill — 12.1-safe). The bookmarklet POSTs the current tab to the authed `/api/v1/items` with no board → Inbox. 377 pass / 0 fail.
+- 2026-06-23 — Addressed party-mode review: fixed a Host-header reflected-XSS (HTML escape + `<` script escape) with a regression test; documented the deliberate cheap-proof delegation to 13.1 and the best-effort title field.

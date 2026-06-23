@@ -30,6 +30,7 @@ import { selectProvider, describeProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
 import { registerV1Api, sha256Hex } from "./api/v1.js";
+import { buildBookmarklet, TOKEN_PLACEHOLDER } from "./capture-clients/bookmarklet.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
 import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
@@ -461,6 +462,48 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   app.get("/healthz", async () => ({ ok: true }));
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
+
+  // Story 13.2 — the bookmarklet help surface. Read-only: it serves a small page that
+  // builds a draggable `javascript:` bookmarklet client-side. The instance URL is
+  // derived from the request (works behind a reverse proxy); the token is NEVER
+  // supplied by the server (12.1 holds only the hash) — the page ships a placeholder
+  // the operator replaces with their own BOARD_API_TOKEN in the browser.
+  app.get("/bookmarklet", async (req, reply) => {
+    // SECURITY: `Host` is attacker-controllable. Escape it for the HTML context and
+    // embed all script-side strings with `<` → < so a malicious Host can neither
+    // break out of <code> nor terminate the <script> via "</script>" (JSON.stringify
+    // alone does NOT escape "/"). trustProxy is off, so req.protocol is socket-derived.
+    const htmlEscape = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+    const host = req.headers.host ?? `${config.host}:${config.port}`;
+    const instanceUrl = `${req.protocol}://${host}`;
+    const template = buildBookmarklet({ instanceUrl, token: TOKEN_PLACEHOLDER });
+    const tokenConfigured = config.apiTokenHash !== null;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Board — Save bookmarklet</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem;color:#222}
+input{width:100%;padding:.5rem;font:inherit;border:1px solid #ccc;border-radius:6px;box-sizing:border-box}
+a.bm{display:inline-block;margin:1rem 0;padding:.6rem 1rem;background:#222;color:#fff;border-radius:8px;text-decoration:none}
+code{background:#f3f3f3;padding:.1rem .3rem;border-radius:4px}.muted{color:#777;font-size:13px}</style>
+</head><body>
+<h1>Save to Board</h1>
+<p>Paste your <code>BOARD_API_TOKEN</code>, then drag the button to your bookmarks bar. Clicking it on any page saves that tab to your Inbox.</p>
+<input id="tok" type="text" placeholder="BOARD_API_TOKEN" autocomplete="off" spellcheck="false">
+<p><a class="bm" id="bm" href="#">📥 Save to Board</a></p>
+<p class="muted">Instance: <code>${htmlEscape(instanceUrl)}</code> · Server token configured: ${tokenConfigured ? "yes" : "no — set BOARD_API_TOKEN"}</p>
+<p class="muted">Your token is filled in entirely in your browser; it is never sent to or stored by this page.</p>
+<script>
+var TEMPLATE=${scriptJson(template)},PH=${scriptJson(TOKEN_PLACEHOLDER)};
+var a=document.getElementById('bm'),t=document.getElementById('tok');
+function upd(){a.href=TEMPLATE.split(PH).join(t.value||PH);}
+t.addEventListener('input',upd);upd();
+</script>
+</body></html>`;
+    reply.type("text/html");
+    return html;
+  });
 
   // --- Collections manifest (SQLite-backed cutover) ---
   // Lists the SQLite board rows so composed boards (create-board) appear and deleted
