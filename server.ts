@@ -24,6 +24,7 @@ import { renameBoard, deleteBoardCascade } from "./db/board-actions.js";
 import { boards as boardsTable } from "./db/schema.js";
 import { addItemSkill } from "./skills/add-item.js";
 import { refetchItem, reenrichBoardItems } from "./enrichment/refetch.js";
+import { archiveFootprint } from "./db/archive-footprint.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
 import { selectProvider, describeProvider } from "./llm/select-provider.js";
@@ -305,6 +306,8 @@ function handleScreenshot(
 
 export interface BuildServerOptions {
   screenshotsDir?: string;
+  /** Story 16.3 — snapshots dir for the archive footprint route; defaults to config. */
+  snapshotsDir?: string;
   /** Skill registry (Story 3.1 seam). Defaults to a fresh registry + registerAllSkills. */
   registry?: SkillRegistry;
   /** ctx collaborators — injectable for hermetic tests; production uses real defaults. */
@@ -336,6 +339,7 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // its write target — buildServer itself does not create dirs (so opt-less tests
   // don't materialize ./data).
   const screenshotsDir = opts.screenshotsDir ?? config.screenshotsDir;
+  const snapshotsDir = opts.snapshotsDir ?? config.snapshotsDir;
 
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024 });
 
@@ -466,6 +470,11 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // write → systemd restart loop). A DB-reachable check, if ever wanted, is a separate
   // /readyz. Used by the systemd unit + the container healthcheck (Story 11.2).
   app.get("/healthz", async () => ({ ok: true }));
+
+  // Story 16.3 — read-only archive footprint ({totalBytes,count} over kind='snapshot'
+  // files). Surfaced for settings/board-info so "no storage limit" is never a silent
+  // surprise. Read-only; mutates nothing.
+  app.get("/api/archive/footprint", async () => archiveFootprint(opts.db ?? getDb(), snapshotsDir));
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
 

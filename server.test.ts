@@ -746,3 +746,30 @@ test("13.3: POST /share strips trailing punctuation from a URL found in text", a
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Story 16.3: archive footprint read route ---
+
+test("16.3: GET /api/archive/footprint reports snapshot-only bytes + count (read-only)", async () => {
+  const { initDb } = await import("./db/index.js");
+  const { seed } = await import("./db/seed.js");
+  const { items, assets } = await import("./db/schema.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-foot-"));
+  const snapshotsDir = path.join(dir, "snapshots");
+  fs.mkdirSync(snapshotsDir, { recursive: true });
+  const handle = initDb(path.join(dir, "c.db"));
+  seed(handle.db);
+  const app = await buildServer({ db: handle, snapshotsDir });
+  try {
+    handle.db.insert(items).values({ id: "f1", boardId: "library", source: "https://a" }).run();
+    fs.writeFileSync(path.join(snapshotsDir, "f1.html"), "z".repeat(200));
+    handle.db.insert(assets).values({ id: "f1-snapshot", itemId: "f1", kind: "snapshot", path: "snapshots/f1.html" }).run();
+    handle.db.insert(assets).values({ id: "f1-shot", itemId: "f1", kind: "screenshot", path: "screenshots/f1.png" }).run();
+
+    const res = await app.inject({ method: "GET", url: "/api/archive/footprint" });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body), { totalBytes: 200, count: 1 }, "snapshot-only total (screenshot excluded)");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

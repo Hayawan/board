@@ -1,6 +1,6 @@
 # Story 16.3: Archive footprint visibility + backfill
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -27,20 +27,20 @@ so that "no storage limit" never becomes a silent surprise.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing size-report test first** (AC: 1, 3)
-  - [ ] In a new `db/archive-footprint.test.ts` (temp DB + temp snapshots dir): seed two `kind='snapshot'` assets (write small `.html` files) plus one `kind='screenshot'` asset; assert the size reporter returns the SUM of the two snapshot files' bytes (screenshot excluded), and assert the call performs no writes (row counts + file set unchanged before/after). Run; confirm red.
-- [ ] **Task 2 — Implement snapshot footprint reporting** (AC: 1, 3)
-  - [ ] Add `archiveFootprint(handle, snapshotsDir): { totalBytes, count }` — select `assets` where `kind='snapshot'`, `stat` each file under `snapshotsDir` (resolve by basename, the Story 2.2 relative-path contract, as `deleteItemWithAssets` does in `db/item-actions.ts#L77`), sum sizes; a missing file contributes 0 (don't throw). Read-only. (Rationale: stat-on-disk over adding a size COLUMN — additive without a migration and always reflects truth even if a file is hand-deleted.) Confirm green.
-- [ ] **Task 3 — Surface the figure in settings/board info** (AC: 1)
-  - [ ] Expose the footprint via the existing read surface (e.g. a settings/board-info read route or the config/status surface). Inject-test that the response carries `{ totalBytes, count }`.
-- [ ] **Task 4 — Write the failing idempotent-backfill test first** (AC: 2, 3)
-  - [ ] In `db/archive-backfill.test.ts` (temp DB; INJECT a fake snapshot-enqueue that records item ids and a fake that "writes" a snapshot asset row): seed three eligible items (one already has a `kind='snapshot'` asset) on an `archive_on_promote` board, plus one item on a non-eligible board. Run backfill; assert it enqueues for exactly the two eligible-without-snapshot items (skips the already-snapshotted + the non-eligible). Run backfill AGAIN; assert ZERO new enqueues (idempotent by item id). Run; confirm red.
-- [ ] **Task 5 — Implement the serial backfill** (AC: 2, 3)
-  - [ ] Add `backfillSnapshots(handle, snapshotsDir, deps)`: query eligible items (boards with `archivesOnPromote`, Story 16.2) that have NO `kind='snapshot'` asset; for each, enqueue the 16.1 snapshot job via `enqueueJob` (concurrency 1 — they drain SERIALLY on the one worker; never spawn parallel Chromium). Idempotency is BY ITEM ID: skip any item that already has a snapshot asset (same predicate that makes 16.1's `${itemId}-snapshot` upsert non-duplicating). Confirm green.
-- [ ] **Task 6 — Expose backfill as a CLI/route (NOT a skill)** (AC: 2)
-  - [ ] Wire `backfillSnapshots` to an operator-invokable surface: a small CLI entry (mirroring `db/import-cli.ts`) and/or a REST route — NOT a skill (the v1 skill list is fixed, per Story 8.3). Document that throughput is intentionally slow (serial, one Chrome).
-- [ ] **Task 7 — No-regression + wire + verify green** (AC: 3, 4)
-  - [ ] Test: backfill does not touch existing screenshot assets / non-eligible items / item fields. Add new tests to the `test` script; run `npm test`; confirm green + Story 16.1 / 16.2 suites unaffected.
+- [x] **Task 1 — Write the failing size-report test first** (AC: 1, 3)
+  - [x] In a new `db/archive-footprint.test.ts` (temp DB + temp snapshots dir): seed two `kind='snapshot'` assets (write small `.html` files) plus one `kind='screenshot'` asset; assert the size reporter returns the SUM of the two snapshot files' bytes (screenshot excluded), and assert the call performs no writes (row counts + file set unchanged before/after). Run; confirm red.
+- [x] **Task 2 — Implement snapshot footprint reporting** (AC: 1, 3)
+  - [x] Add `archiveFootprint(handle, snapshotsDir): { totalBytes, count }` — select `assets` where `kind='snapshot'`, `stat` each file under `snapshotsDir` (resolve by basename, the Story 2.2 relative-path contract, as `deleteItemWithAssets` does in `db/item-actions.ts#L77`), sum sizes; a missing file contributes 0 (don't throw). Read-only. (Rationale: stat-on-disk over adding a size COLUMN — additive without a migration and always reflects truth even if a file is hand-deleted.) Confirm green.
+- [x] **Task 3 — Surface the figure in settings/board info** (AC: 1)
+  - [x] Expose the footprint via the existing read surface (e.g. a settings/board-info read route or the config/status surface). Inject-test that the response carries `{ totalBytes, count }`.
+- [x] **Task 4 — Write the failing idempotent-backfill test first** (AC: 2, 3)
+  - [x] In `db/archive-backfill.test.ts` (temp DB; INJECT a fake snapshot-enqueue that records item ids and a fake that "writes" a snapshot asset row): seed three eligible items (one already has a `kind='snapshot'` asset) on an `archive_on_promote` board, plus one item on a non-eligible board. Run backfill; assert it enqueues for exactly the two eligible-without-snapshot items (skips the already-snapshotted + the non-eligible). Run backfill AGAIN; assert ZERO new enqueues (idempotent by item id). Run; confirm red.
+- [x] **Task 5 — Implement the serial backfill** (AC: 2, 3)
+  - [x] Add `backfillSnapshots(handle, snapshotsDir, deps)`: query eligible items (boards with `archivesOnPromote`, Story 16.2) that have NO `kind='snapshot'` asset; for each, enqueue the 16.1 snapshot job via `enqueueJob` (concurrency 1 — they drain SERIALLY on the one worker; never spawn parallel Chromium). Idempotency is BY ITEM ID: skip any item that already has a snapshot asset (same predicate that makes 16.1's `${itemId}-snapshot` upsert non-duplicating). Confirm green.
+- [x] **Task 6 — Expose backfill as a CLI/route (NOT a skill)** (AC: 2)
+  - [x] Wire `backfillSnapshots` to an operator-invokable surface: a small CLI entry (mirroring `db/import-cli.ts`) and/or a REST route — NOT a skill (the v1 skill list is fixed, per Story 8.3). Document that throughput is intentionally slow (serial, one Chrome).
+- [x] **Task 7 — No-regression + wire + verify green** (AC: 3, 4)
+  - [x] Test: backfill does not touch existing screenshot assets / non-eligible items / item fields. Add new tests to the `test` script; run `npm test`; confirm green + Story 16.1 / 16.2 suites unaffected.
 
 ## Dev Notes
 
@@ -83,3 +83,36 @@ so that "no storage limit" never becomes a silent surprise.
 - [Source: docs/bmad/stories/16-2-opt-in-archival-trigger.md] — the `archivesOnPromote` eligibility rule the backfill applies.
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8 (1M context)
+
+### Debug Log References
+
+- Full suite: **465 pass / 0 fail** (+6 over 16.2: 2 footprint, 3 backfill, 1 footprint-route).
+
+### Completion Notes List
+
+- **Footprint by stat-on-disk, read-only (AC1/AC3).** `archiveFootprint(handle, snapshotsDir)` → `{totalBytes, count}` over `kind='snapshot'` rows only (screenshots excluded), stat by basename under `snapshotsDir` (Story 2.2 contract). Missing file → 0 (never throws). No size column (additive, no migration; always reflects truth even after a hand-delete). The test asserts zero mutation (row count + file set unchanged); surfaced at `GET /api/archive/footprint`.
+- **Serial, idempotent-by-item-id backfill (AC2).** `backfillSnapshots` enqueues a snapshot for each eligible (archive-on-promote board) item lacking a `kind='snapshot'` asset, onto the single concurrency-1 worker via `runSnapshotJob`. Idempotency keys on `kind='snapshot'` + `itemId` (independent of the `${id}-snapshot` id format), so a re-run / crash-resume creates zero duplicates — proven by a fake enqueue that writes the snapshot asset row (mirroring 16.1) and a second run asserting zero new enqueues.
+- **No-parallel-Chromium is INHERITED, not demonstrated here (honest scope).** The backfill suite uses a synchronous fake enqueue, so it proves the *selection/skip/idempotency* logic, NOT Chrome serialization. The concurrency-1 guarantee comes entirely from `enqueueJob`'s single tail-chain and is proven in `capture/concurrency.test.ts` (a second job's `run` doesn't fire until the first's teardown completes). The story's testing-standards line that implies the backfill test asserts single-slot use overstates it — the implementation is correct, but no-parallel rests on the inherited `enqueueJob` proof.
+- **⚠ Cross-process caveat (review — Winston).** The concurrency-1 worker is PER-PROCESS. The `archive:backfill` CLI is a *second* process with its own worker + Chrome; running it while the live server is also capturing would put two Chromiums on the box (the OOM NFR-1 prevents in-process). There is no cross-process lock — the CLI header + console banner now instruct the operator to stop the server first. A PID/port lock is the durable fix (deferred; documented).
+- **Backfill is a CLI, not a skill (8.3).** `npm run archive:backfill` (mirrors `import:flat`). It injects a promise-collecting enqueue and `await`s `Promise.allSettled` BEFORE closing the DB, so an early close never aborts in-flight captures (the default enqueue is fire-and-forget; a one-line comment now warns future callers).
+- **Review fixes applied (party-mode):** (a) the no-regression backfill test now asserts the snapshot WAS added alongside the untouched screenshot (was vacuously satisfiable if backfill skipped the item); (b) the footprint test writes a real file at the basename a screenshot would resolve to, so the byte total — not just count — catches a kind-filter regression; (c) the cross-process warning + fire-and-forget footgun note. NFR-BC confirmed: backfill is insert-only (reads boards/assets/items, inserts snapshot rows) — never alters screenshots/fields/notes/favorites/non-eligible items.
+- **Scope honesty:** the CLI itself is untested (operator glue; matches the untested `import-cli.ts` precedent) — its drain-before-close logic is inspection-verified. The real SingleFile capture remains the 16.1 manual-QA item.
+
+### File List
+
+- `db/archive-footprint.ts` (new) — read-only `archiveFootprint` (stat snapshot files).
+- `db/archive-footprint.test.ts` (new) — snapshot-only byte total + zero-mutation + missing-file tests.
+- `db/archive-backfill.ts` (new) — `backfillSnapshots` (eligible-without-snapshot → serial enqueue; idempotent by item id).
+- `db/archive-backfill.test.ts` (new) — idempotent re-run, skip-snapshotted/ineligible/no-source, no-regression tests.
+- `db/archive-backfill-cli.ts` (new) — `npm run archive:backfill` operator runner (awaits the serial drain; server-stop warning).
+- `server.ts` (modified) — `GET /api/archive/footprint` route + `snapshotsDir` build option.
+- `server.test.ts` (modified) — footprint route test.
+- `package.json` (modified) — `archive:backfill` script + both new test files in the `test` script.
+
+### Change Log
+
+- 2026-06-23 — Story 16.3 implemented (TDD). Read-only snapshot footprint (`GET /api/archive/footprint`) + a serial, resumable, idempotent-by-item-id backfill CLI over archive-on-promote items. Additive/read-only (NFR-BC); serialization inherited from the concurrency-1 worker (NFR-1, in-process). Party-mode review applied (non-vacuous no-regression + byte-exclusion tests, cross-process server-stop warning). Epic 16 complete. Suite 465 pass / 0 fail.
