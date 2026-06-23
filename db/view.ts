@@ -23,9 +23,10 @@ export interface ViewFilter {
 }
 
 export interface ViewLike {
-  filter: ViewFilter | Record<string, unknown> | null | undefined;
-  /** Optional pin/reorder overlay (item-ids). */
-  order?: string[] | null;
+  /** The saved filter (JSON column → typed `unknown`; coerced/guarded at resolve time). */
+  filter: unknown;
+  /** Optional pin/reorder overlay (item-ids; JSON column → `unknown`, guarded at resolve). */
+  order?: unknown;
 }
 
 /**

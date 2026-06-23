@@ -74,7 +74,19 @@ export async function deleteItemWithAssets(
   let filesRemoved = 0;
   for (const a of assetRows) {
     if (!a.path) continue;
-    const abs = join(screenshotsDir, basename(a.path));
+    // Shared-file safety (Story 15.3): a materialized copy's asset row references the SAME
+    // file as its source. `deleteItem` already removed THIS item's asset rows, so if any
+    // OTHER asset row still resolves to the same on-disk file, it's shared — do NOT unlink
+    // it. The check keys on BASENAME — the exact key the unlink resolves under the dir —
+    // so guard and action can never disagree.
+    const base = basename(a.path);
+    const stillReferenced = handle.db
+      .select({ path: assets.path })
+      .from(assets)
+      .all()
+      .some((r) => r.path != null && basename(r.path) === base);
+    if (stillReferenced) continue;
+    const abs = join(screenshotsDir, base);
     if (existsSync(abs)) {
       unlinkSync(abs);
       filesRemoved += 1;
