@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { inspect } from 'node:util';
@@ -41,6 +42,22 @@ export interface Config {
    * displays (Story 8.5) must reflect the selected provider, not this flag.
    */
   providerEnabled: boolean;
+  /**
+   * Story 12.1 — SHA-256 hash (hex) of BOARD_API_TOKEN, or null when unset. Only
+   * the hash is held; the plaintext token is never stored. Set NON-ENUMERABLE (like
+   * `apiKey`) so it also drops out of every serialization surface (JSON.stringify /
+   * util.inspect / spread): an unsalted hash of a low-entropy operator token in a
+   * debug dump is a cheap offline brute-force target, so it must not be logged either.
+   * The `/api/v1` bearer guard (api/v1.ts) compares incoming-token hashes against
+   * this with timingSafeEqual.
+   */
+  apiTokenHash: string | null;
+  /**
+   * Story 12.1 — allowlisted cross-origin origins for the `/api/v1` surface
+   * (BOARD_API_CORS_ORIGINS, comma-separated). Empty = no cross-origin allowed.
+   * Scoped to the v1 plugin only; legacy/SPA routes emit no CORS headers.
+   */
+  corsOrigins: string[];
 }
 
 const REDACTED = '[REDACTED]';
@@ -101,6 +118,15 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     configurable: true,
   });
 
+  // Story 12.1 — hold only a SHA-256 hash of the API token; the plaintext is read
+  // here and immediately hashed, never retained on `config`.
+  const apiTokenPlain = clean(env.BOARD_API_TOKEN);
+  const apiTokenHash = apiTokenPlain ? createHash('sha256').update(apiTokenPlain).digest('hex') : null;
+  const corsOrigins = (clean(env.BOARD_API_CORS_ORIGINS) ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0);
+
   const dataDir = clean(env.DATA_DIR) ?? './data';
   const config: Config = {
     port: parsePort(env.PORT, 3141),
@@ -116,7 +142,17 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     // Enabled when a transport is configured (agent OR base-URL/key). A model name
     // alone does not enable AI.
     providerEnabled: provider.agent !== null || provider.baseUrl !== null || provider.apiKey !== null,
+    // apiTokenHash set NON-ENUMERABLE below (like provider.apiKey) so it drops out of
+    // every serialization surface; placeholder here satisfies the Config type.
+    apiTokenHash: null,
+    corsOrigins,
   };
+  Object.defineProperty(config, 'apiTokenHash', {
+    value: apiTokenHash,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
 
   attachRedaction(config);
   return config;

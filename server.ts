@@ -29,6 +29,7 @@ import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills
 import { selectProvider, describeProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
+import { registerV1Api, sha256Hex } from "./api/v1.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
 import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
@@ -310,6 +311,15 @@ export interface BuildServerOptions {
   queue?: JobQueue;
   logger?: Logger;
   llm?: LLMProvider;
+  /**
+   * Story 12.1 — plaintext bearer token for the `/api/v1` surface. Hashed here;
+   * defaults to the configured `config.apiTokenHash`. Pass `null` to force the v1
+   * surface fail-closed (no token). Accepting plaintext is a test-ergonomics seam
+   * (the AC5 `buildServer({ apiToken })` example) — production reads from config.
+   */
+  apiToken?: string | null;
+  /** Story 12.1 — CORS allowlist for `/api/v1`; defaults to `config.corsOrigins`. */
+  corsOrigins?: string[];
 }
 
 export async function buildServer(opts: BuildServerOptions = {}) {
@@ -636,6 +646,22 @@ export async function buildServer(opts: BuildServerOptions = {}) {
       return parsedOutput.data;
     }
   );
+
+  // Story 12.1 — the encapsulated /api/v1 surface (bearer guard + CORS). Registered
+  // as a prefixed plugin so its hook/CORS apply ONLY to v1 routes (NFR-BC). The token
+  // is injectable for hermetic tests; production defaults to the configured hash.
+  // undefined → use the configured hash; any falsy-but-defined value ("" or null) →
+  // fail-closed null; otherwise hash the injected plaintext.
+  const apiTokenHash =
+    opts.apiToken === undefined
+      ? config.apiTokenHash
+      : opts.apiToken
+        ? sha256Hex(opts.apiToken)
+        : null;
+  await registerV1Api(app, {
+    apiTokenHash,
+    corsOrigins: opts.corsOrigins ?? config.corsOrigins,
+  });
 
   return app;
 }

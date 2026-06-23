@@ -1,6 +1,6 @@
 # Story 12.1: Static bearer-token auth for the API surface
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,25 +31,25 @@ so that exposing a write endpoint to a browser client doesn't open my box to ano
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing auth tests first (TDD)** (AC: 2, 3, 5)
-  - [ ] In a new `api/v1.test.ts` (or extend `server.test.ts`): build `buildServer({ apiToken: "test-token", db: <temp seeded db> })`. Mount a trivial probe route under the v1 plugin for the test (or use a 12.2 route once it exists) so there is a `/api/v1/*` target.
-  - [ ] `inject()` a `/api/v1/*` GET with `Authorization: Bearer test-token` → assert it reaches the handler (not 401).
-  - [ ] `inject()` the same route with NO header → assert `401`; with `Authorization: Bearer wrong` → assert `401`.
-  - [ ] `inject()` `GET /api/bookmarks` (legacy) with NO header → assert it serves unchanged (NFR-BC regression). (AC: 3)
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Add the token to config (hashed, redacted) (TDD)** (AC: 1)
-  - [ ] In `config.test.ts`: assert `loadConfig({ BOARD_API_TOKEN: "x" })` exposes a way to verify a token WITHOUT exposing the plaintext, and that `JSON.stringify(config)` / `util.inspect(config)` / `String(config)` never contain the plaintext (extend the existing redaction tests). Run; confirm red.
-  - [ ] In `config.ts:73` add `BOARD_API_TOKEN` (cleaned) → store only its SHA-256 hash (`node:crypto`), set NON-ENUMERABLE like `apiKey` (`config.ts:97-102`) so it drops out of every serialization surface; add `BOARD_API_CORS_ORIGINS` (comma-split list). Minimal impl to green.
-- [ ] **Task 3 — Add the bearer guard as a `preHandler` inside an encapsulated v1 plugin** (AC: 2)
-  - [ ] New module `api/v1.ts` exporting a Fastify plugin registered with `prefix: "/api/v1"`. The plugin holds a `preHandler` (or `onRequest`) hook that hashes the incoming bearer token and compares with `crypto.timingSafeEqual` against the configured hash; on mismatch/missing → `reply.code(401).send(...)` and return (handler never runs).
-  - [ ] The hook reads the hash from an injected value, NOT the global `config` (so tests are hermetic — see Task 4).
-- [ ] **Task 4 — Wire the injectable token into `buildServer`** (AC: 5)
-  - [ ] Add `apiToken?: string` (or `apiTokenHash?: string`) to `BuildServerOptions` (`server.ts:304-313`), defaulting to the configured hash from `config` (exactly like `db`/`queue`/`llm` already default). Register the v1 plugin in `buildServer` passing the resolved hash. This is the seam that makes AC5 testable without mutating `process.env`.
-- [ ] **Task 5 — Add `@fastify/cors` scoped to the v1 plugin** (AC: 4)
-  - [ ] **Dependency-policy precondition (BLOCKING):** before installing, run `socket package score npm @fastify/cors@11.2.0 --json` (latest resolved at spec time) and confirm `supply_chain ≥ 0.80`, `quality ≥ 0.70`, `vulnerability ≥ 0.80`, `maintenance ≥ 0.50`. If any threshold fails, stop and surface to the user; do not install.
-  - [ ] Register `@fastify/cors` INSIDE the v1 plugin with `origin` = the configured allowlist (`BOARD_API_CORS_ORIGINS`), so only v1 emits CORS headers. Add a test asserting a configured origin is allowed and an unconfigured one is not.
-- [ ] **Task 6 — Verify green + no regression** (AC: 3, 5)
-  - [ ] Add the new test file to the `test` script; run `npm test`; confirm green AND every existing suite (legacy + collections + skills) is unaffected.
+- [x] **Task 1 — Write the failing auth tests first (TDD)** (AC: 2, 3, 5)
+  - [x] In a new `api/v1.test.ts`: build `buildServer({ apiToken: "test-token", db: <temp seeded db> })`. Mounted a trivial `GET /api/v1/ping` probe route under the v1 plugin so there is a `/api/v1/*` target before 12.2's CRUD lands.
+  - [x] `inject()` a `/api/v1/*` GET with `Authorization: Bearer test-token` → asserts it reaches the handler (200, `{ok:true}`).
+  - [x] `inject()` the same route with NO header → `401`; with `Authorization: Bearer wrong-token` and a malformed (no-scheme) header → `401`.
+  - [x] `inject()` `GET /api/bookmarks` (legacy) + `GET /api/collections` with NO header → assert they serve unchanged (NFR-BC regression). (AC: 3)
+  - [x] Ran; confirmed red.
+- [x] **Task 2 — Add the token to config (hashed) (TDD)** (AC: 1)
+  - [x] In `config.test.ts`: asserts `loadConfig({ BOARD_API_TOKEN })` holds a 64-char SHA-256 hash and that `JSON.stringify`/`inspect`/`String(config)` never contain the plaintext; unset → null. Plus a `BOARD_API_CORS_ORIGINS` parse test. Confirmed red first.
+  - [x] In `config.ts` (`loadConfig`) added `BOARD_API_TOKEN` (cleaned) → store only its SHA-256 hash (`node:crypto`); added `BOARD_API_CORS_ORIGINS` (comma-split, trimmed, blanks dropped). **Design note:** the stored value is a non-reversible hash (the plaintext is hashed and discarded immediately), so it is kept as a normal `apiTokenHash` field rather than the non-enumerable `apiKey` pattern — the no-plaintext property holds because plaintext is never stored. AC1/AC5 tests assert this.
+- [x] **Task 3 — Add the bearer guard inside an encapsulated v1 plugin** (AC: 2)
+  - [x] New module `api/v1.ts` exporting `registerV1Api(app, opts)` which registers a child plugin with `prefix: "/api/v1"`. The plugin holds an `onRequest` hook that hashes the incoming bearer token and compares with `crypto.timingSafeEqual` over equal-length hex digests; on mismatch/missing → `reply.code(401).send(...)` + `return reply` (handler never runs). Fail-closed when no token is configured.
+  - [x] The hook reads the hash from the injected `opts.apiTokenHash`, NOT the global `config` (hermetic tests).
+- [x] **Task 4 — Wire the injectable token into `buildServer`** (AC: 5)
+  - [x] Added `apiToken?: string | null` + `corsOrigins?: string[]` to `BuildServerOptions`, defaulting to `config.apiTokenHash`/`config.corsOrigins` (same injection seam as `db`/`queue`/`llm`). `apiToken === null` forces fail-closed. Registered the v1 plugin in `buildServer` passing the resolved hash. This is the seam that makes AC5 testable without mutating `process.env`.
+- [x] **Task 5 — Add `@fastify/cors` scoped to the v1 plugin** (AC: 4)
+  - [x] **Dependency-policy precondition (DONE):** ran `socket package score npm @fastify/cors@11.2.0 --json` — supplyChain 99 (transitive 80), quality 100 (86), vulnerability 100 (82), maintenance 86 (75); all ≥ policy floors. Installed pinned `@fastify/cors@11.2.0`.
+  - [x] Registered `@fastify/cors` INSIDE the v1 plugin with `origin` = the configured allowlist (empty → `false` = no cross-origin), so only v1 emits CORS headers. Tests assert a configured origin is allowed, an unconfigured one omits the header, and legacy routes emit no CORS header.
+- [x] **Task 6 — Verify green + no regression** (AC: 3, 5)
+  - [x] Added `api/v1.test.ts` to the `test` script; `npm test` → **350 pass / 0 fail** (every existing suite — legacy + collections + skills — unaffected).
 
 ## Dev Notes
 
@@ -99,10 +99,43 @@ so that exposing a write endpoint to a browser client doesn't open my box to ano
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
 ### Debug Log References
+
+- New-tests RED run: `node --import tsx --test api/v1.test.ts config.test.ts` → failed on missing `apiTokenHash`/`corsOrigins` + absent v1 routes (expected).
+- GREEN run (same command): 19 pass / 0 fail (9 v1 + 10 config).
+- Full regression: `npm test` → **350 pass / 0 fail**, 55 suites. No pollution (temp DB + temp dir per test).
+- Dependency gate: `socket package score npm @fastify/cors@11.2.0 --json` → supplyChain 99/80, quality 100/86, vulnerability 100/82, maintenance 86/75 (self/transitive) — all ≥ floors. Installed `--save-exact`.
 
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied on the live SQLite store via hermetic `inject()` tests.
+- **Encapsulated plugin, not a URL-prefix global hook.** `registerV1Api` registers a child plugin at `prefix: "/api/v1"`; the bearer `onRequest` hook + `@fastify/cors` live inside that encapsulation context, so they structurally cannot touch root routes (SPA, `/api/bookmarks`, `/api/collections`, `/skills`). NFR-BC AC3 is guaranteed by Fastify's encapsulation, proven by two no-auth-header regression tests on legacy + collections routes.
+- **Hash + constant-time compare, no new crypto dep.** `node:crypto` `createHash('sha256')` + `timingSafeEqual` over equal-length (64-char) hex digests. No bcrypt/argon2 (a static deployment secret is not a user password).
+- **Fail-closed.** No configured token (`apiTokenHash === null`, or `buildServer({ apiToken: null })`) → the v1 surface returns 401 for everything; you cannot authenticate against an unset secret.
+- **No plaintext retained.** `loadConfig` hashes `BOARD_API_TOKEN` and discards the plaintext; `apiTokenHash` is a non-reversible hash, so it's a normal config field (not the non-enumerable `apiKey` pattern). Tests assert the plaintext never appears in `JSON.stringify`/`inspect`/`String(config)` nor in captured server logs.
+- **Injectable seam.** `BuildServerOptions.apiToken` (plaintext, hashed in `buildServer`) + `corsOrigins`, defaulting to `config.apiTokenHash`/`config.corsOrigins` — mirrors the existing `db`/`queue`/`llm` injection, makes allow/deny hermetically testable.
+- **Probe route.** `GET /api/v1/ping` → `{ok:true}` is the guarded test target; 12.2 registers CRUD inside the same plugin behind the same guard.
+
+**Party-mode review (Winston/Amelia/Quinn) — findings addressed before commit:**
+- ✅ [Med] Made `apiTokenHash` **non-enumerable** (Winston): an unsalted SHA-256 of a low-entropy operator token would otherwise leak through `JSON.stringify`/`inspect`/`String(config)` (the `redact()` spread now drops it). Honors AC1's "mirror the `apiKey` model." Added a config test pinning the hash out of all serialization surfaces.
+- ✅ [Med] Fixed the `buildServer` three-way so `apiToken: ""` **fails closed** (was `sha256Hex("")`) — `undefined → config`, falsy-but-defined → null, else hash (Amelia). Added an edge test.
+- ✅ [Low] Added an **OPTIONS preflight** test asserting CORS runs before the bearer guard (204/no-auth + ACAO) — pins the load-bearing registration order 12.2/PWA depend on (Winston/Amelia).
+- ✅ [Low] `Bearer` scheme match is now **case-insensitive** (RFC 7235); added empty-bearer + lowercase-scheme edge tests (Winston/Amelia).
+- ✅ [Low] Reworked the previously **vacuous no-plaintext-log test** (Quinn) to actually dump config through a captured logger and assert neither the plaintext nor the hash appears.
+- ⏸️ [Low, deferred] Token-less startup warn (Winston) — deferred to avoid test-log noise; the existing `warnIfExposed` covers the exposed-without-auth posture.
+
 ### File List
 
+- `api/v1.ts` (new) — encapsulated v1 plugin: `registerV1Api`, `sha256Hex`, bearer `onRequest` guard, scoped `@fastify/cors`, `GET /api/v1/ping` probe.
+- `api/v1.test.ts` (new) — 9 tests (valid→200, missing→401, wrong/malformed→401, fail-closed, 2× NFR-BC no-auth legacy/collections, CORS allow/deny, legacy no-CORS, no-plaintext-in-logs).
+- `config.ts` (modified) — `loadConfig` reads `BOARD_API_TOKEN` → `apiTokenHash` (SHA-256, plaintext discarded) + `BOARD_API_CORS_ORIGINS` → `corsOrigins`; `Config` interface extended.
+- `config.test.ts` (modified) — 2 tests (hash-only/no-plaintext, CORS-origins parse).
+- `server.ts` (modified) — `BuildServerOptions.apiToken`/`corsOrigins`; import + `registerV1Api(app, …)` in `buildServer`.
+- `package.json` (modified) — added `@fastify/cors@11.2.0` (pinned); appended `api/v1.test.ts` to the `test` script.
+
 ### Change Log
+
+- 2026-06-23 — Story 12.1 implemented: encapsulated `/api/v1` surface with a static bearer-token `onRequest` guard (SHA-256 + `timingSafeEqual`, fail-closed) + scoped `@fastify/cors`; config gains `apiTokenHash`/`corsOrigins`; `buildServer` gains injectable `apiToken`/`corsOrigins`. 350 pass / 0 fail, no regression. Status → review.
+- 2026-06-23 — Addressed party-mode code-review findings: non-enumerable `apiTokenHash` (no hash leak in serialization), `apiToken: ""` fails closed, case-insensitive Bearer scheme, OPTIONS-preflight + edge tests, reworked the no-plaintext-log test. 353 pass / 0 fail.

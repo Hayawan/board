@@ -88,6 +88,38 @@ describe('loadConfig (Story 2.1)', () => {
     assert.doesNotMatch(inspect(Object.fromEntries(Object.entries(c.provider))), /sk-nested-leak/);
   });
 
+  // Story 12.1 — BOARD_API_TOKEN is held only as a SHA-256 hash; plaintext never serialized
+  it('holds only a SHA-256 hash of BOARD_API_TOKEN and never serializes the plaintext', () => {
+    const c = loadConfig({ BOARD_API_TOKEN: 'tok-supersecret-zzz' });
+    assert.equal(typeof c.apiTokenHash, 'string');
+    assert.equal(c.apiTokenHash!.length, 64); // sha256 hex
+    assert.doesNotMatch(JSON.stringify(c), /tok-supersecret-zzz/);
+    assert.doesNotMatch(inspect(c), /tok-supersecret-zzz/);
+    assert.doesNotMatch(String(c), /tok-supersecret-zzz/);
+    // the non-reversible hash is non-enumerable, so it also drops out of every
+    // serialization surface (an unsalted hash of a low-entropy token is brute-forceable).
+    assert.ok(!JSON.stringify(c).includes(c.apiTokenHash!));
+    assert.ok(!inspect(c).includes(c.apiTokenHash!));
+    assert.ok(!String(c).includes(c.apiTokenHash!));
+    // ...but it stays directly reachable for the bearer guard.
+    assert.equal(typeof c.apiTokenHash, 'string');
+    // unset → no token
+    assert.equal(loadConfig({}).apiTokenHash, null);
+  });
+
+  // Story 12.1 — BOARD_API_CORS_ORIGINS parses into a trimmed list (default: none)
+  it('parses BOARD_API_CORS_ORIGINS into a list and defaults to empty', () => {
+    assert.deepEqual(loadConfig({}).corsOrigins, []);
+    assert.deepEqual(
+      loadConfig({ BOARD_API_CORS_ORIGINS: 'https://a.example, https://b.example' }).corsOrigins,
+      ['https://a.example', 'https://b.example'],
+    );
+    // blank entries dropped
+    assert.deepEqual(loadConfig({ BOARD_API_CORS_ORIGINS: ' , https://c.example , ' }).corsOrigins, [
+      'https://c.example',
+    ]);
+  });
+
   // Provider env legacy aliases (keep the prototype CLI path working)
   it('folds legacy BOARD_ANALYSIS_AGENT / model env as provider aliases', () => {
     const c = loadConfig({ BOARD_ANALYSIS_AGENT: 'claude', BOARD_CLAUDE_MODEL: 'claude-x' });
