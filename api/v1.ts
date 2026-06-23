@@ -9,7 +9,9 @@ import { addItemSkill } from "../skills/add-item.js";
 import { INBOX_BOARD_ID } from "../db/seed.js";
 import { captureRegistry } from "../capture/adapter.js";
 import { assignItems } from "../enrichment/assign.js";
-import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "../skills/types.js";
+import { suggestBoardForItem } from "../enrichment/suggest.js";
+import { recordAssignmentChoice } from "../db/suggestion-override.js";
+import { buildCtx, disabledLlm, type JobQueue, type LLMProvider, type Logger } from "../skills/types.js";
 
 // Story 12.1 — the encapsulated `/api/v1` surface: a static bearer-token guard +
 // CORS, both scoped to this plugin's routes only. Registering with a prefix gives
@@ -251,6 +253,38 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
           return { error: (err as Error).message };
         }
       });
+
+      // GET /items/:id/suggestion — Story 14.3 READ-ONLY suggested home board for an
+      // Inbox item. Returns {suggestedBoardId: null} when no provider is configured or
+      // a suggestion can't be computed → the client shows the manual picker. Never
+      // mutates the item.
+      v1.get<{ Params: { id: string } }>("/items/:id/suggestion", async (req) => {
+        const providerConfigured = opts.llm !== disabledLlm;
+        return suggestBoardForItem(opts.resolveDb(), {
+          itemId: req.params.id,
+          llm: opts.llm,
+          providerConfigured,
+        });
+      });
+
+      // POST /suggestions/override — Story 14.3 records an assignment CHOICE as a
+      // future-suggestion-quality signal (additive store). The move itself goes through
+      // the 14.2 assign verb; this only captures suggested-vs-chosen. A confirm (chosen
+      // === suggested) or a manual pick (no suggestion) records nothing.
+      v1.post<{ Body: { itemId?: unknown; suggestedBoardId?: unknown; chosenBoardId?: unknown } }>(
+        "/suggestions/override",
+        async (req, reply) => {
+          const itemId = typeof req.body?.itemId === "string" ? req.body.itemId : "";
+          const chosenBoardId = typeof req.body?.chosenBoardId === "string" ? req.body.chosenBoardId : "";
+          if (!itemId || !chosenBoardId) {
+            reply.code(400);
+            return { error: "itemId and chosenBoardId are required" };
+          }
+          const suggestedBoardId =
+            typeof req.body?.suggestedBoardId === "string" ? req.body.suggestedBoardId : null;
+          return recordAssignmentChoice(opts.resolveDb(), { itemId, suggestedBoardId, chosenBoardId });
+        },
+      );
 
       // GET /boards — lean targeting list ({id,name,view}); no descriptor needed.
       v1.get("/boards", async () =>

@@ -66,6 +66,24 @@ export const assets = sqliteTable('asset', {
   capturedAt: integer('captured_at').notNull().default(sql`(unixepoch())`),
 });
 
+// Story 14.3 — additive override-signal store. Records when a user assigned an Inbox
+// item to a DIFFERENT board than the AI suggested (suggested vs chosen), for future
+// suggestion quality. Append-only signal; NEVER a reshape of item/board rows.
+export const suggestionOverrides = sqliteTable('suggestion_override', {
+  id: text('id').primaryKey(),
+  itemId: text('item_id')
+    .notNull()
+    .references(() => items.id),
+  suggestedBoardId: text('suggested_board_id'),
+  // Intentionally NOT FK-constrained: the override is a historical signal that should
+  // survive even if the chosen board is later deleted (item_id keeps its FK so a bad
+  // item is rejected). Signal-only data.
+  chosenBoardId: text('chosen_board_id').notNull(),
+  createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+});
+
+export type SuggestionOverride = typeof suggestionOverrides.$inferSelect;
+
 export type Board = typeof boards.$inferSelect;
 export type NewBoard = typeof boards.$inferInsert;
 export type Item = typeof items.$inferSelect;

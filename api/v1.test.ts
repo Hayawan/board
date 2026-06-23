@@ -632,6 +632,95 @@ test("14.2: POST /api/v1/items/assign to an unknown board → 400", async () => 
   }
 });
 
+// Story 14.3 AC1 — the Inbox is scannable through the EXISTING generic hydrator
+// (listBoardItemsForUi), so a typeless Inbox needs no per-board frontend code.
+test("14.3: the Inbox serves its items via the generic hydration path (no per-board code)", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    handle.db.insert(items).values({ id: "ib1", boardId: "inbox", source: "https://x", title: "Cheap Title" }).run();
+    const res = await app.inject({ method: "GET", url: "/api/collections/inbox/items" });
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body) as any[];
+    assert.ok(body.some((i) => i.id === "ib1" && i.title === "Cheap Title"), "Inbox item hydrated by the generic renderer path");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 14.3 — GET /items/:id/suggestion degrades to null with no provider (manual picker)
+test("14.3: GET /api/v1/items/:id/suggestion returns null when no provider is configured", async () => {
+  const { app, handle, dir } = await seededV1App(); // default llm = disabled in tests
+  try {
+    handle.db.insert(items).values({ id: "s1", boardId: "inbox", source: "https://x" }).run();
+    const res = await app.inject({ method: "GET", url: "/api/v1/items/s1/suggestion", headers: AUTH });
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).suggestedBoardId, null);
+    // read-only: the item is untouched
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "s1")).get().boardId, "inbox");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 14.3 — GET suggestion returns the AI pick when a provider is injected
+test("14.3: GET /api/v1/items/:id/suggestion returns the AI-picked board", async () => {
+  const { initDb } = await import("../db/index.js");
+  const { seed } = await import("../db/seed.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-v1-"));
+  const handle = initDb(path.join(dir, "c.db"));
+  seed(handle.db);
+  handle.db.insert(items).values({ id: "s2", boardId: "inbox", source: "https://x", title: "A RAG paper" }).run();
+  const llm = { complete: async () => ({ boardId: "library" }) };
+  const app = await buildServer({ db: handle, apiToken: "test-token", llm: llm as any });
+  try {
+    const res = await app.inject({ method: "GET", url: "/api/v1/items/s2/suggestion", headers: AUTH });
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).suggestedBoardId, "library");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 14.3 — POST /suggestions/override records a true override only
+test("14.3: POST /api/v1/suggestions/override records a true override", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    handle.db.insert(items).values({ id: "o1", boardId: "library", source: "https://x" }).run();
+    const override = await app.inject({
+      method: "POST",
+      url: "/api/v1/suggestions/override",
+      headers: AUTH,
+      body: JSON.stringify({ itemId: "o1", suggestedBoardId: "inspiration", chosenBoardId: "library" }),
+    });
+    assert.equal(override.statusCode, 200);
+    assert.equal(JSON.parse(override.body).recorded, true);
+
+    // a confirm (chosen === suggested) records nothing
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/v1/suggestions/override",
+      headers: AUTH,
+      body: JSON.stringify({ itemId: "o1", suggestedBoardId: "library", chosenBoardId: "library" }),
+    });
+    assert.equal(JSON.parse(confirm.body).recorded, false);
+
+    // missing fields → 400
+    const bad = await app.inject({
+      method: "POST",
+      url: "/api/v1/suggestions/override",
+      headers: AUTH,
+      body: JSON.stringify({ itemId: "o1" }),
+    });
+    assert.equal(bad.statusCode, 400);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // AC 5 (NFR-BC) — an item created via the legacy/collections path is visible AND
 // mutable via /api/v1 (one store, one set of helpers — no parallel write path).
 test("12.2 (NFR-BC): an item from the collections path is visible + mutable via v1", async () => {

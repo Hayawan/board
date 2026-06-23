@@ -1,6 +1,6 @@
 # Story 14.3: Scannable Inbox + AI suggested-board chip
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,18 +36,18 @@ so that triage is confirmation, not a filing chore.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing suggestion-compute test first (TDD)** (AC: 2, 3, 6)
-  - [ ] Headless unit test (like `render-map.test.ts` / `collections-ui` pure-fn tests): given an Inbox item + the list of candidate boards + `providerConfigured`, the suggestion function returns either `{suggestedBoardId}` (AI on) or `null` (AI off / uncomputable) AND mutates nothing. Run; confirm red.
-- [ ] **Task 2 — Implement the suggestion compute (read-only)** (AC: 2, 3)
-  - [ ] A pure/read-only suggestion resolver: when `providerConfigured`, compute/serve a suggested target board for an Inbox item; otherwise return null (→ manual picker). Reuse the descriptor-driven AI seam (no per-board code). It MUST NOT write to the item.
-- [ ] **Task 3 — Write the failing chip-render test, then render the chip** (AC: 1, 2, 3, 5)
-  - [ ] Pure render test (markup string, like `render-map.js`): an Inbox row renders title/thumbnail/source + a chip when a suggestion exists; a **manual board picker** when not; always a clear state (count visible, manual promote reachable). Implement the renderer in the pure layer; the DOM glue is `el.innerHTML = ...`.
-- [ ] **Task 4 — Wire tap → 14.2 assign** (AC: 2, 3)
-  - [ ] On chip tap (or manual-picker selection), call the 14.2 `POST /api/v1/items/assign` endpoint with `{itemIds:[id], boardId}`. Test the wiring asserts the right payload (suggested board on chip tap; chosen board on manual select).
-- [ ] **Task 5 — Write the failing override-capture test, then the additive store** (AC: 4, 6)
-  - [ ] Decide the store shape (a new `suggestion_override` table OR an append-only log file under `DATA_DIR` OR a new nullable column) — additive only. Test: choosing a board ≠ suggested writes `{itemId, suggestedBoardId, chosenBoardId, at}` to the store; choosing the suggested board writes nothing (or a confirm record — pick one + test it). Implement minimally.
-- [ ] **Task 6 — Write the failing NFR-BC read-only regression, confirm green** (AC: 6)
-  - [ ] Test: render the Inbox + compute suggestions over a pre-wave DB with existing boards/items; assert NO existing item row changed (board_id/fields/status/updatedAt) and existing boards untouched. Then `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Failing suggestion-compute test first (TDD)** (AC: 2, 3, 6)
+  - [x] `enrichment/suggest.test.ts`: given an Inbox item + candidate boards + `providerConfigured`, the resolver returns `{suggestedBoardId}` (AI on) or `null` (AI off / error / unknown-or-Inbox pick) AND mutates nothing. Confirmed red.
+- [x] **Task 2 — Suggestion compute (read-only)** (AC: 2, 3)
+  - [x] `enrichment/suggest.ts` → `suggestBoardForItem(handle, {itemId, llm, providerConfigured})`. Returns null when no provider; else a descriptor-driven LLM pick among candidate boards (Inbox excluded), validated against the candidate allowlist (hallucinated/injected ids → null). READ-ONLY (never writes the item); catches LLM errors → null (degrade, never throw).
+- [x] **Task 3 — Chip-render test + the pure renderer** (AC: 1, 2, 3, 5)
+  - [x] `descriptor/inbox-suggest.js` (pure, like `render-map.js`): `assignControlMode` (chip iff `providerConfigured && known suggestion`, else picker) + `renderAssignControl` (one-tap chip carrying the suggested board + a change-picker; or a manual picker) + `renderInboxCount` (always a clear count, even zero — no guilt-pile). XSS-safe via `escHtml`. Headless-tested.
+- [x] **Task 4 — Wire tap → 14.2 assign** (AC: 2, 3) — **pure layer + endpoint delivered; DOM event glue STAGED** (see Dev Agent Record scope note).
+  - [x] The chip/picker emit `data-assign-item`/`data-assign-board`; the override endpoint + the 14.2 assign endpoint exist and are tested. The browser event-wiring that reads those attributes and `fetch`es `POST /api/v1/items/assign` is staged with the SPA cutover (consistent with the 8.x DOM-staging precedent) — declared explicitly below.
+- [x] **Task 5 — Override-capture test + the additive store** (AC: 4, 6)
+  - [x] New `suggestion_override` table (drizzle + `CREATE TABLE IF NOT EXISTS` in BOOTSTRAP_SQL — additive, existing DBs gain it on boot). `recordAssignmentChoice` writes a row ONLY on a true override (suggestion existed AND chosen ≠ suggested); a confirm or a no-suggestion manual pick records nothing. `POST /api/v1/suggestions/override` route. Item rows untouched.
+- [x] **Task 6 — NFR-BC read-only regression** (AC: 6)
+  - [x] `suggest.test.ts` (item byte-for-byte unchanged after compute), `suggestion-override.test.ts` (item rows untouched on insert), and the route test (boardId unchanged) all assert read-only/additive. Full suite → **414 pass / 0 fail**.
 
 ## Dev Notes
 
@@ -92,3 +92,46 @@ so that triage is confirmation, not a filing chore.
 - [Source: db/schema.ts#L26] — `item` table (where an additive `suggestion_override` table / nullable column would sit, NOT a reshape).
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
+### Debug Log References
+
+- RED → GREEN per piece; full regression: **414 pass / 0 fail**, 66 suites.
+
+### Completion Notes List
+
+- ✅ **Scope honesty (read this first — staged DOM boundary, per the 8.x precedent):** This story delivers + tests the **pure + backend layer**: the read-only suggestion resolver (`enrichment/suggest.ts`), the additive override store (`suggestion_override` table + `recordAssignmentChoice`), the pure chip/picker/count renderer (`descriptor/inbox-suggest.js`), and the two `/api/v1` routes (suggestion read, override capture). The **browser event-glue is STAGED with the flat-JSON→SQLite SPA cutover** (Chrome offline → can't browser-verify), exactly as Stories 8.2/8.3/8.5/8.6 staged their DOM wiring: (a) the tap/select handler that reads `data-assign-item`/`data-assign-board` and `fetch`es `POST /api/v1/items/assign` (Task 4 / AC2 one-tap-move), (b) mounting `renderAssignControl` + `renderInboxCount` into the Inbox list, and (c) calling `POST /api/v1/suggestions/override` on a true override. The pure renderer emits the correct attributes/payload and the endpoints are tested; the glue is the only deferred part.
+- **Read-only + additive (NFR-BC) verified.** Computing a suggestion never writes the item (deepEqual before/after); the override store is a new table (no reshape of item/board); only an explicit assign (14.2) moves an item. Nothing auto-files.
+- **Dignified degradation off `providerConfigured`** (not field-emptiness): no provider → suggestion null → manual picker; an AI box that can't compute → still the picker, never an error. Mirrors `renderEnrichmentState`.
+- **One assign path (D8):** the chip/picker target 14.2's assign endpoint; this story adds no second mover. The override route records signal only — it does NOT move.
+- **Prompt-injection neutralized** by the candidate-id allowlist: even a jailbroken LLM can only pick an existing non-Inbox board, or it's rejected → null.
+
+**Party-mode review (Winston security / Quinn QA) — Quinn flagged CHANGES-REQUESTED for an honesty gap (not the code); addressed before commit:**
+- ✅ [High, Quinn] **Staged DOM glue was undeclared.** Unlike the 8.x precedent, the Dev Agent Record didn't admit the tap→assign wiring is staged, so a reader could think AC2's one-tap-move was wired. Added the explicit scope-honesty note above.
+- ✅ [Med, Quinn] **AC5 count had no impl/test.** Added a pure `renderInboxCount` (clear count incl. zero, NaN-safe) + tests — the no-guilt-pile count now lives in the testable layer.
+- ✅ [Med, Quinn] **AC1 was assert-by-reuse.** Added a route test proving the Inbox serves its items through the generic hydrator (`/api/collections/inbox/items`) — no per-board code.
+- ✅ [Low, Winston] Documented that the board name/descriptor in the suggest prompt is author-controlled (trusted), distinct from the untrusted item content; the candidate-id allowlist guards regardless.
+- ✅ [Low, Winston] Documented that `chosen_board_id` is intentionally NOT FK-constrained (the override is historical signal that should survive a board deletion; `item_id` keeps its FK).
+- 📝 [Nit, accepted] The override route relies on the `item_id` FK to reject a bad item (would surface as a 500, not 400) — signal-only edge case, left as-is.
+
+### File List
+
+- `enrichment/suggest.ts` (new) — read-only `suggestBoardForItem` (descriptor-driven LLM pick; degrades to null; candidate-id allowlist).
+- `enrichment/suggest.test.ts` (new) — 5 tests (AI pick, no-provider null, error/unknown null, never-Inbox, read-only).
+- `db/suggestion-override.ts` (new) — `recordAssignmentChoice` (true-override-only) + `listOverrides`.
+- `db/suggestion-override.test.ts` (new) — 4 tests (records override, confirm/no-suggestion record nothing, item untouched).
+- `db/schema.ts` (modified) — additive `suggestionOverrides` table (`chosen_board_id` intentionally un-FK'd).
+- `db/index.ts` (modified) — `CREATE TABLE IF NOT EXISTS suggestion_override` in BOOTSTRAP_SQL (additive).
+- `descriptor/inbox-suggest.js` (new) — pure `assignControlMode` + `renderAssignControl` + `renderInboxCount`.
+- `descriptor/inbox-suggest.test.ts` (new) — mode/chip/picker/escaping/count tests.
+- `api/v1.ts` (modified) — `GET /items/:id/suggestion` (read-only) + `POST /suggestions/override` routes.
+- `api/v1.test.ts` (modified) — AC1 generic-hydrator test, suggestion null/AI-pick, override true/confirm/400.
+- `package.json` (modified) — registered the 3 new test files.
+
+### Change Log
+
+- 2026-06-23 — Story 14.3: read-only AI board-suggestion resolver + additive override store + pure chip/picker/count renderer + `/api/v1` suggestion & override routes. Degrades off `providerConfigured`; one assign path (chip → 14.2); NFR-BC read-only/additive verified. DOM event-glue staged (8.x precedent). 414 pass / 0 fail.
+- 2026-06-23 — Addressed party-mode review (Quinn CHANGES-REQUESTED, honesty gap): added the explicit staged-DOM scope note, a `renderInboxCount` impl+test (AC5), and an AC1 generic-hydrator route test; documented the author-controlled prompt context + the un-FK'd chosen_board_id.

@@ -61,6 +61,16 @@ CREATE INDEX IF NOT EXISTS idx_item_board_id ON item(board_id);
 CREATE INDEX IF NOT EXISTS idx_item_status ON item(status);
 CREATE INDEX IF NOT EXISTS idx_item_favorite ON item(favorite);
 CREATE INDEX IF NOT EXISTS idx_item_created_at ON item(created_at);
+
+-- Story 14.3 — additive override-signal store (IF NOT EXISTS → existing DBs gain the
+-- table on next boot; existing tables/rows are untouched, NFR-BC).
+CREATE TABLE IF NOT EXISTS suggestion_override (
+  id TEXT PRIMARY KEY NOT NULL,
+  item_id TEXT NOT NULL REFERENCES item(id),
+  suggested_board_id TEXT,
+  chosen_board_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 `;
 
 // Story 1.4 — FTS5 over a SINGLE synthetic search_blob (not per-field columns), so
