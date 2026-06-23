@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { eq } from "drizzle-orm";
 import { buildServer } from "../server.js";
+import { items, assets } from "../db/schema.js";
 
 // Story 12.1 — static bearer-token auth for the new /api/v1 surface.
 // Hermetic: buildServer({ apiToken, db }) injects a known token + temp seeded DB;
@@ -22,9 +24,12 @@ async function seededV1App(
     apiToken: opts.apiToken ?? "test-token",
     corsOrigins: opts.corsOrigins,
     logger: opts.logger,
+    screenshotsDir: dir, // Story 12.2 delete-asset-file tests resolve files here
   });
   return { app, handle, dir };
 }
+
+const AUTH = { authorization: "Bearer test-token", "content-type": "application/json" };
 
 // AC 2 — valid token reaches the handler (not 401)
 test("12.1: /api/v1/* with a valid bearer token reaches the handler", async () => {
@@ -250,6 +255,314 @@ test("12.1: CORS preflight (OPTIONS) succeeds with no auth header for a configur
     });
     assert.ok(res.statusCode < 400, `preflight must not be rejected, got ${res.statusCode}`);
     assert.equal(res.headers["access-control-allow-origin"], "https://ext.example");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// =====================================================================
+// Story 12.2 — CRUD item + board API under /api/v1 (token-authed).
+// Auth itself is 12.1's concern; every request here carries a valid token.
+// =====================================================================
+
+/** Insert an item row directly with a deterministic created_at (seconds). */
+function insertItem(
+  handle: any,
+  o: { id: string; boardId?: string; status?: string; createdAt: number; source?: string; title?: string; favorite?: number },
+) {
+  handle.db
+    .insert(items)
+    .values({
+      id: o.id,
+      boardId: o.boardId ?? "library",
+      status: o.status ?? "ready",
+      source: o.source ?? `https://example.com/${o.id}`,
+      title: o.title ?? o.id,
+      favorite: o.favorite ?? 0,
+      createdAt: o.createdAt,
+      updatedAt: o.createdAt,
+    })
+    .run();
+}
+
+// AC 1 — create-from-URL returns an optimistic pending item immediately
+test("12.2: POST /api/v1/items creates a pending item on an existing board", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      body: JSON.stringify({ url: "https://example.com", boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 201);
+    const body = JSON.parse(res.body);
+    assert.equal(body.status, "pending");
+    assert.ok(body.id, "created item should have an id");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 1 — missing/blank url → 400 (before the DB is touched)
+test("12.2: POST /api/v1/items with a blank url → 400", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      body: JSON.stringify({ url: "   ", boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 400);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 1 — unknown boardId → 400 (12.2 does NOT default to Inbox)
+test("12.2: POST /api/v1/items with an unknown boardId → 400", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      body: JSON.stringify({ url: "https://example.com", boardId: "no-such-board" }),
+    });
+    assert.equal(res.statusCode, 400);
+    // pin the cause: the error names the missing board, not a generic failure
+    assert.match(JSON.parse(res.body).error ?? "", /board/i);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 1 — create persists through the SHARED store (not a parallel path). Combined
+// with the unknown-board test above (which proves addItemSkill's board-existence
+// check runs), this pins that create goes through the shared add-item/writeItem path.
+test("12.2: POST /api/v1/items persists the item to the shared store", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      body: JSON.stringify({ url: "https://shared-store.example", boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 201);
+    const id = JSON.parse(res.body).id;
+    // the row exists in the SAME items table the rest of the app reads/writes
+    const row = handle.db.select().from(items).where(eq(items.id, id)).get();
+    assert.ok(row, "created item must be in the shared items table");
+    assert.equal(row.boardId, "library");
+    assert.equal(row.source, "https://shared-store.example");
+    assert.equal(row.status, "pending");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 2 — list: newest-first + board/status/limit/offset/since filters
+test("12.2: GET /api/v1/items lists newest-first and honors filters", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    insertItem(handle, { id: "old", createdAt: 1000, boardId: "library", status: "ready" });
+    insertItem(handle, { id: "mid", createdAt: 2000, boardId: "library", status: "pending" });
+    insertItem(handle, { id: "new", createdAt: 3000, boardId: "inspiration", status: "ready" });
+
+    // newest-first across all boards
+    const all = await app.inject({ method: "GET", url: "/api/v1/items", headers: AUTH });
+    assert.equal(all.statusCode, 200);
+    const ids = (JSON.parse(all.body) as any[]).map((i) => i.id);
+    assert.deepEqual(ids, ["new", "mid", "old"]);
+
+    // board filter
+    const lib = await app.inject({ method: "GET", url: "/api/v1/items?board=library", headers: AUTH });
+    assert.deepEqual((JSON.parse(lib.body) as any[]).map((i) => i.id), ["mid", "old"]);
+
+    // status filter
+    const ready = await app.inject({ method: "GET", url: "/api/v1/items?status=ready", headers: AUTH });
+    assert.deepEqual((JSON.parse(ready.body) as any[]).map((i) => i.id), ["new", "old"]);
+
+    // limit + offset
+    const page = await app.inject({ method: "GET", url: "/api/v1/items?limit=1&offset=1", headers: AUTH });
+    assert.deepEqual((JSON.parse(page.body) as any[]).map((i) => i.id), ["mid"]);
+
+    // since (created_at >= 2500)
+    const since = await app.inject({ method: "GET", url: "/api/v1/items?since=2500", headers: AUTH });
+    assert.deepEqual((JSON.parse(since.body) as any[]).map((i) => i.id), ["new"]);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 2 (edge) — a malformed numeric param must fall back to defaults, not 500
+test("12.2: GET /api/v1/items with junk limit/offset/since falls back (no 500)", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    insertItem(handle, { id: "a", createdAt: 1000 });
+    insertItem(handle, { id: "b", createdAt: 2000 });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/items?limit=abc&offset=xyz&since=nope",
+      headers: AUTH,
+    });
+    assert.equal(res.statusCode, 200, "junk params must not crash the query");
+    assert.equal((JSON.parse(res.body) as any[]).length, 2);
+
+    // offset beyond the end → empty page, still 200
+    const beyond = await app.inject({ method: "GET", url: "/api/v1/items?offset=999", headers: AUTH });
+    assert.equal(beyond.statusCode, 200);
+    assert.deepEqual(JSON.parse(beyond.body), []);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 3 (contract) — a bodyless DELETE with a reflexive json content-type still works
+test("12.2: DELETE with an empty body + json content-type still returns 204", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    insertItem(handle, { id: "ct1", createdAt: 1000 });
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/items/ct1",
+      headers: AUTH, // includes content-type: application/json with no body
+    });
+    assert.equal(res.statusCode, 204);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 3 — PATCH reuses the 8.3 allowlist (disallowed field unchanged)
+test("12.2: PATCH /api/v1/items/:id applies the user-field allowlist", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    insertItem(handle, { id: "p1", createdAt: 1000, status: "ready" });
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/items/p1",
+      headers: AUTH,
+      body: JSON.stringify({ notes: "hello", favorite: true, status: "done" }),
+    });
+    assert.equal(res.statusCode, 200);
+    const row = handle.db.select().from(items).where(eq(items.id, "p1")).get();
+    assert.equal(row.notes, "hello");
+    assert.equal(row.favorite, 1);
+    assert.equal(row.status, "ready", "disallowed `status` must be unchanged");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("12.2: PATCH /api/v1/items/:id unknown id → 404", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({ method: "PATCH", url: "/api/v1/items/nope", headers: AUTH, body: "{}" });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 3 — DELETE reuses deleteItemWithAssets (204 + asset FILE removed, no orphan)
+test("12.2: DELETE /api/v1/items/:id returns 204 and unlinks the asset file", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    insertItem(handle, { id: "d1", createdAt: 1000 });
+    const fileName = "d1-shot.png";
+    fs.writeFileSync(path.join(dir, fileName), "png-bytes");
+    handle.db
+      .insert(assets)
+      .values({ id: "a-d1", itemId: "d1", kind: "screenshot", path: `screenshots/${fileName}` })
+      .run();
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/items/d1",
+      headers: { authorization: "Bearer test-token" }, // bodyless: no json content-type
+    });
+    assert.equal(res.statusCode, 204);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "d1")).get(), undefined);
+    assert.equal(fs.existsSync(path.join(dir, fileName)), false, "asset file must be unlinked (no orphan)");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("12.2: DELETE /api/v1/items/:id unknown id → 404", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/items/nope",
+      headers: { authorization: "Bearer test-token" },
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 4 — board list for targeting ({id,name,view})
+test("12.2: GET /api/v1/boards returns {id,name,view} for targeting", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({ method: "GET", url: "/api/v1/boards", headers: AUTH });
+    assert.equal(res.statusCode, 200);
+    const boards = JSON.parse(res.body) as any[];
+    assert.ok(boards.some((b) => b.id === "library" && b.name && b.view));
+    assert.ok(boards.some((b) => b.id === "inspiration"));
+    // lean shape — no descriptor
+    assert.ok(boards.every((b) => !("descriptor" in b)));
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC 5 (NFR-BC) — an item created via the legacy/collections path is visible AND
+// mutable via /api/v1 (one store, one set of helpers — no parallel write path).
+test("12.2 (NFR-BC): an item from the collections path is visible + mutable via v1", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    // create via the existing collections route (no auth header — legacy surface)
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/collections/library/items",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://shared.example" }),
+    });
+    assert.equal(created.statusCode, 200);
+    const id = JSON.parse(created.body).id;
+
+    // visible via v1 list
+    const list = await app.inject({ method: "GET", url: "/api/v1/items?board=library", headers: AUTH });
+    assert.ok((JSON.parse(list.body) as any[]).some((i) => i.id === id), "v1 should see the collections-created item");
+
+    // mutable via v1 patch
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${id}`,
+      headers: AUTH,
+      body: JSON.stringify({ notes: "via v1" }),
+    });
+    assert.equal(patched.statusCode, 200);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get().notes, "via v1");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -661,6 +661,14 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   await registerV1Api(app, {
     apiTokenHash,
     corsOrigins: opts.corsOrigins ?? config.corsOrigins,
+    // Story 12.2 — CRUD collaborators. resolveDb is lazy (opts.db ?? getDb()) so
+    // opt-less callers/tests never open the real DB; queue/logger/llm are the same
+    // instances the rest of the app uses (one store, one set of helpers — NFR-BC).
+    resolveDb: () => opts.db ?? getDb(),
+    queue,
+    logger,
+    llm,
+    screenshotsDir,
   });
 
   return app;

@@ -1,6 +1,12 @@
 import cors from "@fastify/cors";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
+import type { DbHandle } from "../db/index.js";
+import { boards } from "../db/schema.js";
+import { getItemForUi, listItemsForApi } from "../db/hydrate.js";
+import { patchItemFields, deleteItemWithAssets } from "../db/item-actions.js";
+import { addItemSkill } from "../skills/add-item.js";
+import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "../skills/types.js";
 
 // Story 12.1 — the encapsulated `/api/v1` surface: a static bearer-token guard +
 // CORS, both scoped to this plugin's routes only. Registering with a prefix gives
@@ -16,6 +22,16 @@ export interface V1Options {
   apiTokenHash: string | null;
   /** Allowlisted cross-origin origins; empty = no cross-origin allowed. */
   corsOrigins: string[];
+  /**
+   * Story 12.2 — CRUD collaborators. `resolveDb` is lazy (the established
+   * `opts.db ?? getDb()` pattern) so opt-less callers never open the real DB.
+   * All CRUD reuses existing helpers — no parallel write path (NFR-BC).
+   */
+  resolveDb: () => DbHandle;
+  queue: JobQueue;
+  logger: Logger;
+  llm: LLMProvider;
+  screenshotsDir: string;
 }
 
 /** SHA-256 hex of a string. Exported so the server can hash an injected test token. */
@@ -59,6 +75,24 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
         origin: opts.corsOrigins.length > 0 ? opts.corsOrigins : false,
       });
 
+      // Tolerant JSON body parsing scoped to v1: an empty body with a reflexive
+      // `content-type: application/json` (common for fetch-based DELETE/PATCH clients)
+      // parses to undefined instead of Fastify's default 400. Encapsulated to this
+      // plugin — the root app's parser is unchanged (NFR-BC).
+      v1.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
+        const text = (body as string).trim();
+        if (text.length === 0) {
+          done(null, undefined);
+          return;
+        }
+        try {
+          done(null, JSON.parse(text));
+        } catch (err) {
+          (err as { statusCode?: number }).statusCode = 400;
+          done(err as Error, undefined);
+        }
+      });
+
       // Bearer guard. Fail-closed: if no token is configured, the v1 surface rejects
       // everything (you cannot authenticate against an unset secret).
       v1.addHook("onRequest", async (req, reply) => {
@@ -72,6 +106,106 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
 
       // Trivial liveness probe so 12.1 has a guarded target (12.2 adds CRUD here).
       v1.get("/ping", async () => ({ ok: true }));
+
+      // --- Story 12.2: token-authed CRUD over items + the board list ---
+      // The stable contract every capture client (bookmarklet/PWA/extension) speaks.
+      // REUSES the existing helpers verbatim (addItemSkill, the single-writer queue,
+      // patchItemFields, deleteItemWithAssets) — no parallel write path, no new
+      // delete/cleanup logic. Only the filtered list query (listItemsForApi) is new.
+
+      // POST /items — create-from-URL, optimistic pending (async capture on the queue).
+      v1.post<{ Body: { url?: string; boardId?: string } }>("/items", async (req, reply) => {
+        const url = (req.body?.url ?? "").trim();
+        if (!url) {
+          reply.code(400);
+          return { error: "url is required" };
+        }
+        // 12.2 requires an explicit existing board (the Inbox default is 13.1's job).
+        const boardId = typeof req.body?.boardId === "string" ? req.body.boardId.trim() : "";
+        if (!boardId) {
+          reply.code(400);
+          return { error: "boardId is required" };
+        }
+        const handle = opts.resolveDb();
+        const ctx = buildCtx({
+          db: handle,
+          queue: opts.queue,
+          logger: opts.logger,
+          llm: opts.llm,
+          boardId,
+        });
+        try {
+          const { itemId } = await addItemSkill.run({ boardId, source: url }, ctx);
+          reply.code(201);
+          return getItemForUi(handle, itemId) ?? { id: itemId, url, status: "pending" };
+        } catch (err) {
+          // Unknown board (FK insert fails) / invalid input → client error.
+          reply.code(400);
+          return { error: (err as Error).message };
+        }
+      });
+
+      // GET /items — newest-first, filtered + paginated (recent-additions feed).
+      v1.get<{
+        Querystring: {
+          board?: string;
+          status?: string;
+          since?: string;
+          limit?: string;
+          offset?: string;
+        };
+      }>("/items", async (req) => {
+        const q = req.query;
+        // Coerce to a finite number or drop to undefined — a junk param (?limit=abc)
+        // must NOT produce NaN (which would yield a degenerate LIMIT NaN → 500, or a
+        // silently-empty `since` filter). Malformed → ignored, not an error.
+        const num = (v: string | undefined) => {
+          if (v === undefined || v === "") return undefined;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : undefined;
+        };
+        return listItemsForApi(opts.resolveDb(), {
+          boardId: q.board,
+          status: q.status,
+          since: num(q.since),
+          limit: num(q.limit),
+          offset: num(q.offset),
+        });
+      });
+
+      // PATCH /items/:id — user-field allowlist (reuses 8.3; disallowed keys ignored).
+      v1.patch<{ Params: { id: string }; Body: Record<string, unknown> }>(
+        "/items/:id",
+        async (req, reply) => {
+          const handle = opts.resolveDb();
+          const updated = await patchItemFields(
+            handle,
+            req.params.id,
+            (req.body ?? {}) as Record<string, unknown>,
+          );
+          if (!updated) {
+            reply.code(404);
+            return { error: "Not found" };
+          }
+          return getItemForUi(handle, req.params.id);
+        },
+      );
+
+      // DELETE /items/:id — row cascade + asset-FILE unlink (reuses 8.3; no orphans).
+      v1.delete<{ Params: { id: string } }>("/items/:id", async (req, reply) => {
+        const res = await deleteItemWithAssets(opts.resolveDb(), req.params.id, opts.screenshotsDir);
+        if (!res.deleted) {
+          reply.code(404);
+          return { error: "Not found" };
+        }
+        reply.code(204);
+        return null;
+      });
+
+      // GET /boards — lean targeting list ({id,name,view}); no descriptor needed.
+      v1.get("/boards", async () =>
+        opts.resolveDb().db.select({ id: boards.id, name: boards.name, view: boards.view }).from(boards).all(),
+      );
     },
     { prefix: "/api/v1" },
   );

@@ -1,6 +1,6 @@
 # Story 12.2: CRUD item + board API (versioned, reuses the async queue)
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,25 +34,25 @@ so that I can save a URL, list recent additions, edit, and delete via a stable c
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing CRUD lifecycle tests first (TDD)** (AC: 1, 2, 3, 6)
-  - [ ] In `api/v1.test.ts`: build `buildServer({ apiToken: "test-token", db: <temp seeded db>, screenshotsDir: <temp dir> })`. All requests carry `Authorization: Bearer test-token` (auth itself is 12.1's concern, not re-tested here).
-  - [ ] `inject()` `POST /api/v1/items {url, boardId: <seeded board>}` → assert `pending` item returned immediately (status `pending`/`processing`, id present).
-  - [ ] Seed several items with known `created_at`; `inject()` `GET /api/v1/items?limit=&offset=&board=&status=&since=` → assert newest-first order + each filter narrows correctly.
-  - [ ] `inject()` `PATCH /api/v1/items/:id {notes, favorite, status: "done"}` → assert notes/favorite applied, `status` (disallowed) unchanged.
-  - [ ] Seed an item WITH an asset file on disk in the temp `screenshotsDir`; `inject()` `DELETE /api/v1/items/:id` → assert `204` AND the asset file is gone (no orphan).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement `POST /api/v1/items` (create-from-URL, optimistic)** (AC: 1)
-  - [ ] In `api/v1.ts` (the 12.1 plugin): add the route. Validate `url` (trim; `400` before `getDb`, mirroring `server.ts:495`). Build ctx lazily (`buildCtx({ db: handle, queue, logger, llm, boardId })`), call `addItemSkill.run({ boardId, source: url }, ctx)`, return `getItemForUi(handle, itemId)`. Unknown board → `400`. Do NOT default `boardId` (13.1 owns the Inbox default).
-- [ ] **Task 3 — Implement `GET /api/v1/items` (filter + recency + pagination)** (AC: 2)
-  - [ ] Write a NEW Drizzle query over `items`: optional `eq(boardId)`, `eq(status)`, `gte(createdAt, since)`; `orderBy(desc(createdAt))`; `limit`/`offset` (bounded default). Return the hydrated shape clients need (reuse the hydration adapter if it fits a flat list, else select the columns directly). This is genuinely new — `listBoardItemsForUi` is board-scoped, not paginated/filtered.
-- [ ] **Task 4 — Implement `PATCH` + `DELETE /api/v1/items/:id` (reuse 8.3)** (AC: 3)
-  - [ ] `PATCH`: `patchItemFields(handle, id, body)`; `404` if undefined; return the updated row (hydrated). `DELETE`: `deleteItemWithAssets(handle, id, screenshotsDir)`; `404` if `!deleted`; else `204`. No new logic — these are the exact helpers the `/api/items/:id` routes already use (`server.ts:359-374`).
-- [ ] **Task 5 — Implement `GET /api/v1/boards` (targeting list)** (AC: 4)
-  - [ ] Select `{ id, name, view }` from the `boards` table; return the array. (Lean — no descriptor needed for targeting.)
-- [ ] **Task 6 — No-regression test (shared store)** (AC: 5)
-  - [ ] Create an item via the legacy/collections path (or seed directly), then `inject()` `GET`/`PATCH /api/v1/...` and assert it's visible + mutable through v1 — proving v1 and the existing routes share one store + one set of helpers.
-- [ ] **Task 7 — Wire tests + verify green** (AC: 6)
-  - [ ] Add `api/v1.test.ts` to the `test` script; run `npm test`; confirm green AND existing suites unaffected.
+- [x] **Task 1 — Write the failing CRUD lifecycle tests first (TDD)** (AC: 1, 2, 3, 6)
+  - [x] In `api/v1.test.ts`: build `buildServer({ apiToken: "test-token", db: <temp seeded db>, screenshotsDir: <temp dir> })`. All requests carry `Authorization: Bearer test-token` (auth is 12.1's concern, not re-tested here).
+  - [x] `POST /api/v1/items {url, boardId: "library"}` → asserts `201` + `pending` item with id.
+  - [x] Seeded items with known `created_at`; `GET /api/v1/items?limit=&offset=&board=&status=&since=` → asserts newest-first + each filter narrows.
+  - [x] `PATCH /api/v1/items/:id {notes, favorite, status: "done"}` → notes/favorite applied, `status` (disallowed) unchanged.
+  - [x] Seeded an item WITH an asset file on disk in the temp `screenshotsDir`; `DELETE /api/v1/items/:id` → `204` AND the asset file is gone (no orphan).
+  - [x] Ran; confirmed red (9 failing 12.2 tests).
+- [x] **Task 2 — Implement `POST /api/v1/items` (create-from-URL, optimistic)** (AC: 1)
+  - [x] Added the route in `api/v1.ts` (the 12.1 plugin, behind the guard). Validates `url` (trim; `400` before the DB). Builds ctx lazily (`buildCtx`), calls `addItemSkill.run({ boardId, source: url }, ctx)`, returns `getItemForUi` with `201`. Unknown board → `400`. Does NOT default `boardId` (13.1 owns the Inbox default). **Note:** the unknown-board `400` comes from `addItemSkill`'s explicit board-existence check (`add-item.ts:29-32`) thrown *before* any insert — not from an FK violation as the AC text speculated; the outcome (client 400) is the same and the cause is cleaner.
+- [x] **Task 3 — Implement `GET /api/v1/items` (filter + recency + pagination)** (AC: 2)
+  - [x] New `listItemsForApi` (`db/hydrate.ts`): optional `eq(boardId)`, `eq(status)`, `gte(createdAt, since)`; `orderBy(desc(createdAt))` (idx_item_created_at); bounded `limit` (default 50, max 200) + `offset`. Assets loaded only for the returned page (`inArray`), avoiding the whole-table N+1. NaN-safe (junk params fall back, never a degenerate query).
+- [x] **Task 4 — Implement `PATCH` + `DELETE /api/v1/items/:id` (reuse 8.3)** (AC: 3)
+  - [x] `PATCH`: `patchItemFields` → `404` if undefined, else returns the hydrated row (`getItemForUi`). `DELETE`: `deleteItemWithAssets(handle, id, screenshotsDir)` → `404` if `!deleted`, else `204`. The EXACT helpers the `/api/collections/.../items/:id` routes use (`server.ts:524,534`) — no new delete/cleanup logic.
+- [x] **Task 5 — Implement `GET /api/v1/boards` (targeting list)** (AC: 4)
+  - [x] Drizzle `select({ id, name, view })` from `boards`. Lean — no descriptor; test asserts the shape excludes `descriptor`.
+- [x] **Task 6 — No-regression test (shared store)** (AC: 5)
+  - [x] Create via the legacy `/api/collections/library/items` route (no auth header), then `GET`/`PATCH` via `/api/v1` and assert it's visible + mutable — proves one store + one set of helpers, no parallel write path.
+- [x] **Task 7 — Wire tests + verify green** (AC: 6)
+  - [x] `api/v1.test.ts` already in the `test` script (12.1). `npm test` → **366 pass / 0 fail**, existing suites unaffected.
 
 ## Dev Notes
 
@@ -109,10 +109,36 @@ so that I can save a URL, list recent additions, edit, and delete via a stable c
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
 ### Debug Log References
+
+- RED: 9 failing 12.2 tests (no v1 CRUD routes). GREEN: 22 → after review hardening 25 v1 tests pass.
+- Full regression: `npm test` → **366 pass / 0 fail**, 55 suites.
+- Fixed a self-inflicted test issue: a bodyless `DELETE` carrying `content-type: application/json` triggered Fastify's empty-JSON-body 400. Resolved properly by adding a tolerant JSON parser scoped to the v1 plugin (empty body → undefined), so real fetch-based clients that set the header reflexively work.
 
 ### Completion Notes List
 
+- ✅ All 6 ACs satisfied on the live SQLite store via hermetic `inject()` tests; every request carries a valid bearer token (auth coverage stays in 12.1).
+- **Reuse, not reinvention (NFR-BC).** PATCH/DELETE call `patchItemFields`/`deleteItemWithAssets` verbatim — the same helpers as the collections routes, so the orphaned-asset-file bug 8.3 fixed cannot reappear (proven: the DELETE test creates a real file and asserts it's unlinked). Create reuses `addItemSkill.run` + `buildCtx` + `getItemForUi`. No schema change, no parallel write path. The NFR-BC test creates via the legacy collections route and reads/mutates via v1 to prove one shared store.
+- **Only `listItemsForApi` is new** (`db/hydrate.ts`): cross-board, newest-first (idx_item_created_at), bounded limit (default 50 / max 200), offset, `since`. Distinct from the board-scoped `listBoardItemsForUi`.
+- **Optimistic create.** `POST` returns `201` + the `pending` item immediately; capture/enrich runs fire-and-forget (no blocking on Chrome/LLM), mirroring the collections-POST contract.
+- **No Inbox default** (`boardId` required → `400` if absent/unknown); 13.1 adds the default once the Inbox is seeded. Honors "no story depends on a later story."
+
+**Party-mode review (Winston/Amelia/Quinn) — findings addressed before commit:**
+- ✅ [Med] **NaN coercion bug** (Winston+Amelia): `?limit=abc` → `Number("abc")=NaN` → degenerate `LIMIT NaN` → unhandled 500; `?since=abc` → silently-empty result. Fixed with a `Number.isFinite` guard at both the HTTP boundary (`num()`) and in `listItemsForApi` (defensive for any caller). Added a junk-param + offset-beyond-end test (200, fallback, no 500).
+- ✅ [Med] **POST reuse not pinned** (Quinn): replaced a status-only assertion with a shared-store persistence check + tightened the unknown-board test to assert the `/board/i` error — together pinning that `addItemSkill`'s board-existence path runs (a parallel hand-rolled insert wouldn't 400 on an unknown board).
+- ✅ [Info→fixed] **DELETE empty-body content-type footgun** (Amelia): added a tolerant JSON parser scoped to v1 + a test (DELETE with json content-type + empty body → 204).
+- ⏸️ [Low, accepted] **Broad `catch → 400` on create** (Amelia/Winston): a genuine infra failure is also mapped to 400. Left consistent with the existing collections-POST route (`server.ts:513-516`), which has the same broad catch — narrowing only here would diverge from the established convention. Noted for a future wave-wide error-mapping pass.
+
 ### File List
 
+- `api/v1.ts` (modified) — added `POST/GET/PATCH/DELETE /items` + `GET /boards` inside the encapsulated v1 plugin; extended `V1Options` with CRUD deps (`resolveDb`, `queue`, `logger`, `llm`, `screenshotsDir`); added a tolerant v1-scoped JSON parser.
+- `db/hydrate.ts` (modified) — new `listItemsForApi` + `ListItemsQuery` (filtered/paginated/recency list; NaN-safe; page-scoped asset load via `inArray`).
+- `server.ts` (modified) — pass the CRUD deps (lazy `resolveDb`, shared queue/logger/llm/screenshotsDir) into `registerV1Api`.
+- `api/v1.test.ts` (modified) — +13 tests (create/blank-url/unknown-board/persistence, list+filters, junk-param fallback, patch+allowlist+404, delete+orphan+404+empty-body-content-type, board list, NFR-BC shared store).
+
 ### Change Log
+
+- 2026-06-23 — Story 12.2 implemented: token-authed CRUD (`POST/GET/PATCH/DELETE /api/v1/items`, `GET /api/v1/boards`) inside the 12.1 plugin, reusing add-item/patchItemFields/deleteItemWithAssets and the shared store (no parallel write path); only the filtered/paginated `listItemsForApi` is new. 366 pass / 0 fail. Status → review.
+- 2026-06-23 — Addressed party-mode review: NaN-param guard (no 500 / no silent-empty), pinned POST shared-store reuse + unknown-board cause, tolerant empty-body DELETE parser. 25 v1 tests, 366 total pass.

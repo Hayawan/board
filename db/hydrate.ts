@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 
 import { assets, items, type Item, type Asset } from './schema.js';
 import type { DbHandle } from './index.js';
@@ -52,6 +52,59 @@ export function listBoardItemsForUi(handle: DbHandle, boardId: string): Record<s
     const list = byItem.get(a.itemId) ?? [];
     list.push(a);
     byItem.set(a.itemId, list);
+  }
+  return rows.map((it) => hydrateItemForUi(it, byItem.get(it.id) ?? []));
+}
+
+/** Story 12.2 — filter/recency/pagination options for the public list API. */
+export interface ListItemsQuery {
+  boardId?: string;
+  status?: string;
+  /** unix seconds; returns items with created_at >= since */
+  since?: number;
+  limit?: number;
+  offset?: number;
+}
+
+const LIST_DEFAULT_LIMIT = 50;
+const LIST_MAX_LIMIT = 200;
+
+/**
+ * Story 12.2 — cross-board, filtered, paginated item list for `GET /api/v1/items`,
+ * newest-first (created_at DESC, idx_item_created_at). Distinct from
+ * `listBoardItemsForUi` (single board, unbounded). The limit is clamped to a bounded
+ * max so a polling client can't request an unbounded scan. Assets are loaded only for
+ * the returned page (not the whole table).
+ */
+export function listItemsForApi(handle: DbHandle, q: ListItemsQuery = {}): Record<string, unknown>[] {
+  const conds = [];
+  if (q.boardId) conds.push(eq(items.boardId, q.boardId));
+  if (q.status) conds.push(eq(items.status, q.status));
+  if (q.since !== undefined) conds.push(gte(items.createdAt, q.since));
+  const where = conds.length === 0 ? undefined : conds.length === 1 ? conds[0] : and(...conds);
+
+  // Defensive: a non-finite limit/offset (e.g. NaN from a bad caller) falls back to
+  // the default rather than producing a degenerate query.
+  const limit = Math.min(Math.max(Number.isFinite(q.limit) ? (q.limit as number) : LIST_DEFAULT_LIMIT, 1), LIST_MAX_LIMIT);
+  const offset = Math.max(Number.isFinite(q.offset) ? (q.offset as number) : 0, 0);
+
+  const rows = handle.db
+    .select()
+    .from(items)
+    .where(where)
+    .orderBy(desc(items.createdAt))
+    .limit(limit)
+    .offset(offset)
+    .all();
+
+  const ids = rows.map((r) => r.id);
+  const byItem = new Map<string, Asset[]>();
+  if (ids.length > 0) {
+    for (const a of handle.db.select().from(assets).where(inArray(assets.itemId, ids)).all()) {
+      const list = byItem.get(a.itemId) ?? [];
+      list.push(a);
+      byItem.set(a.itemId, list);
+    }
   }
   return rows.map((it) => hydrateItemForUi(it, byItem.get(it.id) ?? []));
 }
