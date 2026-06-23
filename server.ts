@@ -26,7 +26,7 @@ import { addItemSkill } from "./skills/add-item.js";
 import { refetchItem, reenrichBoardItems } from "./enrichment/refetch.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
-import { selectProvider } from "./llm/select-provider.js";
+import { selectProvider, describeProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
@@ -377,7 +377,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // when a real LLM transport is selected, false in no-AI mode. The frontend keys
   // the "enrichment disabled" dignified state + the first-run nudge off THIS, never
   // off field-emptiness (an enabled box can legitimately return empty).
-  app.get("/api/meta", async () => ({ providerConfigured: llm !== disabledLlm }));
+  // `provider` is the configured provider's identity (or null) so the UI can label the
+  // add button and list ONLY what's wired up — never a phantom agent. Derived from the
+  // same config selectProvider used, so it can't disagree with `providerConfigured`.
+  app.get("/api/meta", async () => ({
+    providerConfigured: llm !== disabledLlm,
+    provider: llm === disabledLlm ? null : describeProvider(config),
+  }));
 
   // Board edit actions (the "Edit board" modal). Creation is via the compose-board /
   // create-board skills; these cover rename + delete-with-cascade.

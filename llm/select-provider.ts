@@ -29,3 +29,30 @@ export function selectProvider(config: Config): LLMProvider {
 
   return disabledLlm;
 }
+
+export interface ProviderInfo {
+  kind: 'cli' | 'http';
+  agent?: 'claude' | 'codex';
+  /** Human label for the UI (add-button + provider menu). */
+  label: string;
+}
+
+const CLI_AGENT_LABELS: Record<'claude' | 'codex', string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+};
+
+/**
+ * The human-facing identity of the provider `selectProvider` would resolve — for
+ * /api/meta, so the UI labels the add button and lists ONLY the configured provider
+ * (no phantom agents). MUST mirror selectProvider's precedence: HTTP (base-URL+model)
+ * wins; a supported CLI agent next; anything else → null (no AI).
+ */
+export function describeProvider(config: Config): ProviderInfo | null {
+  const p = config.provider;
+  if (p.baseUrl && p.model) return { kind: 'http', label: p.model };
+  if (p.agent === 'claude' || p.agent === 'codex') {
+    return { kind: 'cli', agent: p.agent, label: CLI_AGENT_LABELS[p.agent] };
+  }
+  return null;
+}

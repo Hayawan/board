@@ -377,6 +377,7 @@ test("GET /api/meta reports providerConfigured=false in no-AI mode (disabledLlm)
   const res = await app.inject({ method: "GET", url: "/api/meta" });
   assert.equal(res.statusCode, 200);
   assert.equal(JSON.parse(res.body).providerConfigured, false);
+  assert.equal(JSON.parse(res.body).provider, null, "no provider identity in no-AI mode");
 });
 
 test("GET /api/meta reports providerConfigured=true when an llm is injected", async () => {
