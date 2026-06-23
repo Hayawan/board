@@ -32,6 +32,8 @@ export interface Config {
   dbPath: string;
   /** Derived: the screenshots directory, rooted under DATA_DIR (Story 2.2). */
   screenshotsDir: string;
+  /** Derived: the snapshots (archival self-contained HTML) directory (Story 16.1). */
+  snapshotsDir: string;
   chromePath: string | null;
   provider: ProviderConfig;
   /**
@@ -137,6 +139,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     // resolve under screenshotsDir; only the resolution base moves here.
     dbPath: path.join(dataDir, 'board.db'),
     screenshotsDir: path.join(dataDir, 'screenshots'),
+    snapshotsDir: path.join(dataDir, 'snapshots'),
     chromePath: clean(env.CHROME_PATH) ?? null,
     provider,
     // Enabled when a transport is configured (agent OR base-URL/key). A model name
@@ -186,6 +189,7 @@ function attachRedaction(config: Config): void {
 export function ensureDataDir(cfg: Config = config): void {
   mkdirSync(cfg.dataDir, { recursive: true });
   mkdirSync(cfg.screenshotsDir, { recursive: true });
+  mkdirSync(cfg.snapshotsDir, { recursive: true });
 }
 
 /** Resolved singleton for app code (reads the real process.env explicitly). */

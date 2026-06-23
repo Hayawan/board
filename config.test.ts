@@ -2,7 +2,11 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { inspect } from 'node:util';
 
-import { loadConfig } from './config.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { loadConfig, ensureDataDir } from './config.js';
 
 // Story 2.1 — pure, injectable config loader. Tests never touch the real process.env.
 
@@ -138,5 +142,27 @@ describe('loadConfig (Story 2.1)', () => {
       BOARD_CODEX_MODEL: 'codex-m',
     });
     assert.equal(both.provider.model, 'codex-m');
+  });
+});
+
+// Story 16.1 — derived snapshotsDir (rooted under DATA_DIR, Story 2.2 relative-path
+// contract) + ensureDataDir creates it idempotently. Additive alongside screenshotsDir.
+describe('snapshotsDir (Story 16.1)', () => {
+  it('derives snapshotsDir under DATA_DIR, sibling of screenshotsDir', () => {
+    const c = loadConfig({ DATA_DIR: '/tmp/board-snap' });
+    assert.equal(c.snapshotsDir, path.join('/tmp/board-snap', 'snapshots'));
+    assert.equal(c.screenshotsDir, path.join('/tmp/board-snap', 'screenshots'));
+  });
+
+  it('ensureDataDir creates the snapshots dir idempotently', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'board-oss-snapcfg-'));
+    try {
+      const c = loadConfig({ DATA_DIR: dir });
+      ensureDataDir(c);
+      ensureDataDir(c); // idempotent — second call must not throw
+      assert.ok(fs.existsSync(c.snapshotsDir), 'snapshots dir was created');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
