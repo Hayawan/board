@@ -114,3 +114,26 @@ describe('descriptor schema (Story 1.2)', () => {
     assert.deepEqual(targets.sort(), ['summary', 'topics', 'type']); // rating has no enrichable flag
   });
 });
+
+// Story 16.2 — additive, default-off `archive_on_promote` descriptor flag + reader.
+describe('archive_on_promote flag (Story 16.2)', () => {
+  const base = { fields: [], enrichment_prompt: '', view: 'grid', ingest_mode: 'url-screenshot' };
+
+  it('an existing descriptor WITHOUT the flag still validates and reads archival off', async () => {
+    const { archivesOnPromote } = await import('./types.js');
+    const d = validateDescriptor(base); // pre-wave descriptor, no flag
+    assert.equal(archivesOnPromote(d), false, 'absent flag defaults OFF (NFR-BC)');
+  });
+
+  it('a descriptor WITH archive_on_promote:true validates and reads on', async () => {
+    const { archivesOnPromote } = await import('./types.js');
+    const d = validateDescriptor({ ...base, archive_on_promote: true });
+    assert.equal(d.archive_on_promote, true, 'the optional flag round-trips');
+    assert.equal(archivesOnPromote(d), true);
+  });
+
+  it('archive_on_promote:false reads off', async () => {
+    const { archivesOnPromote } = await import('./types.js');
+    assert.equal(archivesOnPromote(validateDescriptor({ ...base, archive_on_promote: false })), false);
+  });
+});

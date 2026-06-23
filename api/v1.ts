@@ -2,7 +2,9 @@ import cors from "@fastify/cors";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { DbHandle } from "../db/index.js";
-import { boards } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import { boards, items } from "../db/schema.js";
+import { runSnapshotJob } from "../capture/url-snapshot.js";
 import { getItemForUi, listItemsForApi } from "../db/hydrate.js";
 import { patchItemFields, deleteItemWithAssets } from "../db/item-actions.js";
 import { addItemSkill } from "../skills/add-item.js";
@@ -37,6 +39,12 @@ export interface V1Options {
   logger: Logger;
   llm: LLMProvider;
   screenshotsDir: string;
+  /**
+   * Story 16.2 — injectable archival snapshot enqueue (tests spy so no Chrome runs).
+   * Used by the per-item archive action AND threaded into the assign verb's trigger.
+   * Defaults to fire-and-forget the 16.1 snapshot job on the single worker.
+   */
+  enqueueSnapshot?: (args: { itemId: string; url: string | null }) => void;
 }
 
 /** SHA-256 hex of a string. Exported so the server can hash an injected test token. */
@@ -108,6 +116,15 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
           return reply; // short-circuit — the route handler never runs
         }
       });
+
+      // Story 16.2 — the archival enqueue (injectable for tests). Default: fire-and-forget
+      // the 16.1 snapshot job on the single worker (status-neutral, graceful). Used by the
+      // per-item archive action AND threaded into the assign verb's opt-in trigger.
+      const enqueueSnapshot =
+        opts.enqueueSnapshot ??
+        ((a: { itemId: string; url: string | null }) => {
+          if (a.url) void runSnapshotJob(opts.resolveDb(), { itemId: a.itemId, url: a.url });
+        });
 
       // Trivial liveness probe so 12.1 has a guarded target (12.2 adds CRUD here).
       v1.get("/ping", async () => ({ ok: true }));
@@ -240,6 +257,7 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
             boardId,
             llm: opts.llm,
             registry: captureRegistry,
+            enqueueSnapshot, // Story 16.2 — opt-in archival fires here iff the target board is flagged
           });
           await result.settled; // manual assign returns the enriched result
           return {
@@ -285,6 +303,26 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
           return recordAssignmentChoice(opts.resolveDb(), { itemId, suggestedBoardId, chosenBoardId });
         },
       );
+
+      // POST /items/:id/archive — Story 16.2 per-item "archive this" action. A REST
+      // action (NOT a skill — the v1 skill list is fixed, Story 8.3), sibling to the
+      // per-item notes/favorite/delete. Enqueues exactly one 16.1 snapshot for the item
+      // (status-neutral, graceful); returns 202 without blocking on the capture. Unknown
+      // item → 404. Items with no source URL can't be snapshotted → 422.
+      v1.post<{ Params: { id: string } }>("/items/:id/archive", async (req, reply) => {
+        const item = opts.resolveDb().db.select().from(items).where(eq(items.id, req.params.id)).get();
+        if (!item) {
+          reply.code(404);
+          return { error: "Not found" };
+        }
+        if (!item.source) {
+          reply.code(422);
+          return { error: "item has no source URL to archive" };
+        }
+        enqueueSnapshot({ itemId: item.id, url: item.source });
+        reply.code(202);
+        return { queued: true };
+      });
 
       // GET /boards — lean targeting list ({id,name,view}); no descriptor needed.
       v1.get("/boards", async () =>

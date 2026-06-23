@@ -321,6 +321,12 @@ export interface BuildServerOptions {
   apiToken?: string | null;
   /** Story 12.1 — CORS allowlist for `/api/v1`; defaults to `config.corsOrigins`. */
   corsOrigins?: string[];
+  /**
+   * Story 16.2 — injectable archival snapshot enqueue (tests pass a spy so the per-item
+   * archive action + the assign trigger never launch Chrome). Defaults to fire-and-forget
+   * the 16.1 snapshot job on the single worker.
+   */
+  enqueueSnapshot?: (args: { itemId: string; url: string | null }) => void;
 }
 
 export async function buildServer(opts: BuildServerOptions = {}) {
@@ -783,6 +789,7 @@ t.addEventListener('input',upd);upd();
     logger,
     llm,
     screenshotsDir,
+    enqueueSnapshot: opts.enqueueSnapshot,
   });
 
   return app;

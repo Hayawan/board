@@ -1,6 +1,6 @@
 # Story 16.2: Opt-in archival trigger (curated-tier)
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,19 +30,19 @@ so that my small box archives what I curated, not every bucket link.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing descriptor-flag test first (additive, default-off)** (AC: 1, 4)
-  - [ ] In `descriptor/types.test.ts` (or the descriptor test file): assert an EXISTING descriptor JSON (no archive flag) still validates via `validateDescriptor`, and a helper reads "archive on promote" as `false` when the flag is absent. Then assert a descriptor WITH the optional flag set to `true` validates and reads `true`. Run; confirm red.
-- [ ] **Task 2 — Add the additive opt-in flag** (AC: 2, 4)
-  - [ ] Extend `BoardDescriptorSchema` (`descriptor/types.ts#L76-81`) with an OPTIONAL `archive_on_promote: z.boolean().optional()` (default-off when absent) — additive; existing closed descriptors stay valid. Add a tiny reader (e.g. `archivesOnPromote(descriptor): boolean` defaulting to `false`). Confirm green. (Rationale for descriptor-flag over a new column: the descriptor is the board's behavior contract, schema-as-data AD9; archival policy is board behavior.)
-- [ ] **Task 3 — Write the failing assign-trigger test first** (AC: 2, 3)
-  - [ ] In the assign-endpoint test (Story 14.2's suite): seed a board with `archive_on_promote:true` and an earned-tier-enriched item; assign the item; assert a snapshot job is ENQUEUED for that item id (inject a fake snapshot-enqueue so no real Chrome runs), and assert the item's `enrichable:true` fields (the takeaway) are still present after assign (coexistence). Add a control: a board WITHOUT the flag → NO snapshot enqueued. Run; confirm red.
-- [ ] **Task 4 — Trigger the snapshot from the assign verb (post-earned-enrichment)** (AC: 2, 3)
-  - [ ] In the assign path (Story 14.2, `POST /api/v1/items/assign`), AFTER the earned-tier enrichment fires and the item is `done`, if the target board `archivesOnPromote(descriptor)`, enqueue the 16.1 snapshot job for that item. Inject the snapshot-enqueue fn so the assign path stays unit-testable and the snapshot is concurrency-1-serialized on the worker (16.1). Do NOT block the assign response on the snapshot completing (it degrades gracefully, 16.1 AC4).
-- [ ] **Task 5 — Per-item "archive this" action** (AC: 2)
-  - [ ] Write the failing test first: invoking the per-item archive action on a curated item enqueues exactly one snapshot job for that item; on an unknown item → 404 / no-op. Then implement as a REST action (NOT a skill — the v1 skill list is fixed, per Story 8.3): e.g. `POST /api/v1/items/:id/archive`, enqueuing the 16.1 job. Confirm green.
-- [ ] **Task 6 — Default-off + no-regression tests, wire + verify green** (AC: 1, 4, 5)
-  - [ ] Test: capturing to the Inbox (no flag) enqueues NO snapshot. Test: flipping a board's flag does NOT retroactively snapshot or alter its existing items. Test: a pre-wave descriptor (no flag) validates and reads archival off.
-  - [ ] Add new tests to the `test` script; run `npm test`; confirm green + Story 14.2 / descriptor suites unaffected.
+- [x] **Task 1 — Write the failing descriptor-flag test first (additive, default-off)** (AC: 1, 4)
+  - [x] In `descriptor/types.test.ts` (or the descriptor test file): assert an EXISTING descriptor JSON (no archive flag) still validates via `validateDescriptor`, and a helper reads "archive on promote" as `false` when the flag is absent. Then assert a descriptor WITH the optional flag set to `true` validates and reads `true`. Run; confirm red.
+- [x] **Task 2 — Add the additive opt-in flag** (AC: 2, 4)
+  - [x] Extend `BoardDescriptorSchema` (`descriptor/types.ts#L76-81`) with an OPTIONAL `archive_on_promote: z.boolean().optional()` (default-off when absent) — additive; existing closed descriptors stay valid. Add a tiny reader (e.g. `archivesOnPromote(descriptor): boolean` defaulting to `false`). Confirm green. (Rationale for descriptor-flag over a new column: the descriptor is the board's behavior contract, schema-as-data AD9; archival policy is board behavior.)
+- [x] **Task 3 — Write the failing assign-trigger test first** (AC: 2, 3)
+  - [x] In the assign-endpoint test (Story 14.2's suite): seed a board with `archive_on_promote:true` and an earned-tier-enriched item; assign the item; assert a snapshot job is ENQUEUED for that item id (inject a fake snapshot-enqueue so no real Chrome runs), and assert the item's `enrichable:true` fields (the takeaway) are still present after assign (coexistence). Add a control: a board WITHOUT the flag → NO snapshot enqueued. Run; confirm red.
+- [x] **Task 4 — Trigger the snapshot from the assign verb (post-earned-enrichment)** (AC: 2, 3)
+  - [x] In the assign path (Story 14.2, `POST /api/v1/items/assign`), AFTER the earned-tier enrichment fires and the item is `done`, if the target board `archivesOnPromote(descriptor)`, enqueue the 16.1 snapshot job for that item. Inject the snapshot-enqueue fn so the assign path stays unit-testable and the snapshot is concurrency-1-serialized on the worker (16.1). Do NOT block the assign response on the snapshot completing (it degrades gracefully, 16.1 AC4).
+- [x] **Task 5 — Per-item "archive this" action** (AC: 2)
+  - [x] Write the failing test first: invoking the per-item archive action on a curated item enqueues exactly one snapshot job for that item; on an unknown item → 404 / no-op. Then implement as a REST action (NOT a skill — the v1 skill list is fixed, per Story 8.3): e.g. `POST /api/v1/items/:id/archive`, enqueuing the 16.1 job. Confirm green.
+- [x] **Task 6 — Default-off + no-regression tests, wire + verify green** (AC: 1, 4, 5)
+  - [x] Test: capturing to the Inbox (no flag) enqueues NO snapshot. Test: flipping a board's flag does NOT retroactively snapshot or alter its existing items. Test: a pre-wave descriptor (no flag) validates and reads archival off.
+  - [x] Add new tests to the `test` script; run `npm test`; confirm green + Story 14.2 / descriptor suites unaffected.
 
 ## Dev Notes
 
@@ -89,3 +89,34 @@ so that my small box archives what I curated, not every bucket link.
 - [Source: docs/bmad/stories/8-3-per-item-actions.md] — per-item actions are REST, not skills (the v1 skill list is fixed).
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8 (1M context)
+
+### Debug Log References
+
+- Full suite: **459 pass / 0 fail** (+11 over 16.1: 3 descriptor-flag, 3 assign-trigger, 1 batch, 4 v1-route incl. 422).
+
+### Completion Notes List
+
+- **Additive, default-off descriptor flag (AC1/AC4).** `archive_on_promote?: boolean` added to `BoardDescriptorSchema` (`.optional()`) + `archivesOnPromote(d)` reader (`=== true`, so null/undefined/absent → OFF). No column, no migration — the descriptor is a single JSON blob. Pre-wave descriptors validate unchanged and read archival off (tested).
+- **Hooked into the ONE assign verb (D8), forward-only.** The trigger lives in `assignItems` (so the future composer 15.2 inherits it with no second path): after the moves + earned-enrich jobs, if `archivesOnPromote(target.descriptor)`, enqueue a snapshot for each MOVED id (never skipped/notFound/failed — only `assigned` is iterated). Enabling a board's flag affects only future promotions — it never retroactively sweeps existing items (that's 16.3). Implication flagged in review: a flagged bulk-promote becomes N snapshot jobs (serialized, graceful) — acceptable, it's per-board opt-in + the composer is an explicit user action.
+- **Per-item "archive this" is REST, not a skill (8.3).** `POST /api/v1/items/:id/archive` (inside the bearer-guarded v1 plugin): 404 unknown, 422 no-source (a manual-upload item has no URL to snapshot), 202 `{queued:true}` — never blocks on the capture.
+- **Takeaway coexistence is the differentiator (AC3).** The earned takeaway lives in `item.fields`; the snapshot lands in the separate `asset` table — disjoint state. The move preserves fields by construction; the snapshot job is status-neutral and writes only an asset row. **Review fix (Quinn):** the coexistence test now uses a real spy-LLM earned enrichment (writes `summary` into fields) rather than a hand-seeded field under `disabledLlm`, so it proves the *enrichment-written* takeaway survives alongside the snapshot trigger — crossing the actual enrich+trigger seam.
+- **Fire-and-forget, serialized, graceful.** `enqueueSnapshot` is injectable (tests pass a spy → no Chrome); the default `void runSnapshotJob(...)` resolves-never-rejects (16.1 swallows all failures), so the un-awaited call leaks no unhandled rejection. The snapshot enqueues synchronously after the enrich jobs, so it serializes behind them on the concurrency-1 worker.
+- **Review fixes applied (party-mode):** (a) AC3 test strengthened to the real earned-enrichment path; (b) added a multi-item batch test (exactly the moved items archived, skipped one not); (c) added the 422 no-source route test. Reviewers confirmed no double-fire (ids de-duped), no wrong-board (single resolved target), and forward-only no-regression. The duplicated default `enqueueSnapshot` closure (assign.ts + v1.ts) was left as intentional defense-in-depth so `assignItems` stays usable standalone (the composer path).
+
+### File List
+
+- `descriptor/types.ts` (modified) — optional `archive_on_promote` + `archivesOnPromote` reader.
+- `descriptor/descriptor.test.ts` (modified) — flag validate/read tests (absent→off, true, false).
+- `enrichment/assign.ts` (modified) — archival trigger after the moves (injectable `enqueueSnapshot`, fires only for moved items on a flagged target).
+- `enrichment/assign.test.ts` (modified) — trigger tests: flagged→enqueue+takeaway-coexists, unflagged→none, skipped→none, batch.
+- `api/v1.ts` (modified) — `enqueueSnapshot` default + threaded into `assignItems`; new `POST /items/:id/archive` route.
+- `api/v1.test.ts` (modified) — per-item archive (202/404/422) + default-off-on-capture tests; `seededV1App` accepts an `enqueueSnapshot` spy.
+- `server.ts` (modified) — `BuildServerOptions.enqueueSnapshot` threaded to `V1Options`.
+
+### Change Log
+
+- 2026-06-23 — Story 16.2 implemented (TDD). Opt-in archival: an additive default-off `archive_on_promote` board flag + a per-item REST archive action both enqueue the 16.1 snapshot, hooked into the one assign verb (forward-only, fire-and-forget, graceful). Takeaway coexists with the snapshot. Party-mode review applied (real-enrichment coexistence test, batch + 422 coverage). Suite 459 pass / 0 fail.
