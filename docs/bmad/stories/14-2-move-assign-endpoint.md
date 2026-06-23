@@ -1,6 +1,6 @@
 # Story 14.2: Move/assign endpoint (the one verb)
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,18 +36,18 @@ so that promoting a link is a single coherent motion (the same one the composer 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing assign-helper test first (TDD)** (AC: 1, 3, 4)
-  - [ ] In `db/item-actions.test.ts` (extend) or new `db/assign.test.ts`: seed a temp DB with an Inbox-like board + a typed target board + an item on the source; call the assign helper for one item with a fake `LLMProvider` (call counter). Assert `board_id` moved to target AND the LLM was called with the TARGET descriptor's enrichable keys. Run; confirm red.
-- [ ] **Task 2 — Implement the shared assign helper (the ONE code path)** (AC: 1, 2, 3)
-  - [ ] Add `assignItems(handle, {itemIds, boardId, llm, registry, ...}): Promise<...>` (a new `db/assign.ts` or `enrichment/assign.ts`). For each id: validate the target board exists; update `item.board_id` via the typed write (`writeItem`, `db/queue.ts:160`) so search_blob stays consistent; THEN enqueue the **earned-tier** enrich-only job (`runCaptureEnrichJob` with `source` omitted + `tier:'earned'`, the `reenrichBoardItems` pattern, `enrichment/refetch.ts:51`). One job per item; collect with `Promise.allSettled`. This helper is the single assign path 15.2 will reuse — DO NOT inline assignment logic in the route.
-- [ ] **Task 3 — Field-preservation + idempotency tests** (AC: 4, 5)
-  - [ ] Test: item with extra/unknown cheap field keys → after assign, those keys are still present in `fields` (merge, never delete). Test: re-assign to the SAME board → no second LLM call (skip when `boardId === item.board_id`). Test: assign BACK to Inbox (typeless) → earned tier early-returns (no LLM), cheap fields preserved, `board_id` = Inbox.
-- [ ] **Task 4 — Batch test** (AC: 1, 7)
-  - [ ] Test: `assignItems` with 3 item ids → all 3 moved, 3 earned jobs fired (or skipped per AC5 rule), `Promise.allSettled` so one failure doesn't abort the rest.
-- [ ] **Task 5 — Write the failing route test, then the route** (AC: 1, 2)
-  - [ ] In `server.test.ts`: `inject()` `POST /api/v1/items/assign` (token-authed per Epic 12) with `{itemIds, boardId}`; assert 200 + the FK move. Run red. Then add the thin route in `server.ts` that calls `assignItems` (using `opts.db ?? getDb()` lazily, like the 8.3 routes, `server.ts:362`). 4xx on unknown board / empty itemIds.
-- [ ] **Task 6 — Write the failing NFR-BC regression, confirm green** (AC: 6)
-  - [ ] Test: seed a pre-wave DB with existing boards/items; boot/wire the assign feature WITHOUT calling it; assert every existing item's `board_id` and `fields` are unchanged (nothing auto-assigns). Then `npm test`; confirm green + existing suites unaffected.
+- [x] **Task 1 — Failing assign-helper test first (TDD)** (AC: 1, 3, 4)
+  - [x] `enrichment/assign.test.ts`: seed Inbox + typed boards + an item on Inbox; call `assignItems` for one item with a spy `LLMProvider`. Asserts `board_id` moved to target AND the earned prompt reflects the TARGET descriptor (`/design inspiration/i`). Confirmed red (helper missing).
+- [x] **Task 2 — Shared assign helper (the ONE code path)** (AC: 1, 2, 3)
+  - [x] `enrichment/assign.ts` → `assignItems(handle, {itemIds, boardId, llm, registry, timeoutFn})`. Validates the target board once; **Phase 1** moves every item's `board_id` via `writeItem` (single-FK, search_blob recomputed vs target, fields/assets untouched), de-duped, per-item try/catch; **Phase 2** fires the **earned-tier** enrich-only job (`runCaptureEnrichJob`, `source` omitted + `tier:'earned'`) for each moved item, collected via `Promise.allSettled` exposed as `settled`. The single path 15.2 reuses — the route does NOT inline assign logic.
+- [x] **Task 3 — Field-preservation + idempotency tests** (AC: 4, 5)
+  - [x] Unmapped cheap field preserved through assign (merge, never delete); same-board re-assign → `skipped`, 0 LLM calls; assign BACK to typeless Inbox → earned tier early-returns (0 LLM), cheap fields preserved, `board_id`=Inbox.
+- [x] **Task 4 — Batch test** (AC: 1, 7)
+  - [x] `assignItems` with 3 ids (incl. one unknown) → valid ids moved, unknown → `notFound`, `Promise.allSettled`. **Plus a genuine enrich-failure-in-batch test** (throwing LLM): both items still move (FK durable) and land at `status=error` — proving a failing job doesn't abort the batch (review fix for the original confound).
+- [x] **Task 5 — Failing route test, then the route** (AC: 1, 2)
+  - [x] `api/v1.test.ts`: `POST /api/v1/items/assign` (token-authed) → 200 + FK move; empty `itemIds` → 400; unknown board → 400 (no move). Confirmed red, then added the thin route in `api/v1.ts` calling `assignItems` (lazy `resolveDb`). The route awaits `settled` (manual assign returns the enriched result) with a defensive 200-item cap.
+- [x] **Task 6 — NFR-BC regression (AC: 6)**
+  - [x] `enrichment/assign.test.ts`: existing items on existing boards are byte-for-byte unchanged when an explicit assign names only a DIFFERENT item — nothing auto-assigns. Full suite → **393 pass / 0 fail**.
 
 ## Dev Notes
 
@@ -93,3 +93,36 @@ so that promoting a link is a single coherent motion (the same one the composer 
 - [Source: db/item-actions.ts#L25] — `patchItemFields`: the "shared helper, thin route" precedent.
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
+### Debug Log References
+
+- RED → GREEN → full regression: **393 pass / 0 fail**, 64 suites.
+
+### Completion Notes List
+
+- ✅ All 7 ACs satisfied. `assignItems` is the single assign verb both the REST route and the composer (15.2) call — the route is a thin adapter with zero assign logic. Single-FK move (D12, no m2m). Move-first-then-enrich is now structurally guaranteed: **all moves complete (Phase 1) before any earned-enrich job is fired (Phase 2)**, so every job reads the TARGET descriptor.
+- **Reversible/idempotent by construction:** same-board re-assign is skipped (no LLM churn); assign-back-to-Inbox is a safe no-op (Inbox is typeless → the worker's `allowedKeys.size===0` early-return; verified the Inbox descriptor is non-null so it hits the early-return, not the null-descriptor throw); the enrich merge preserves all fields.
+
+**Party-mode review (Winston/Amelia/Quinn) — findings addressed before commit:**
+- ✅ [High, Quinn] **Missing AC6 no-auto-assign regression** — the wave's core NFR-BC guarantee for this story was argued only structurally. Added a test: existing items on existing boards are byte-for-byte unchanged when an explicit assign names only a different item.
+- ✅ [High, Amelia] **AC7 batch-resilience confound** — the original "one unknown id doesn't abort the rest" used a `notFound` id, never exercising a failing enrich job. Added a throwing-LLM batch test: both items still move (FK durable) and land at `status=error`, `settled` resolves — proving the `.catch`/`allSettled` resilience.
+- ✅ [Med, Amelia/Winston] **Move/enrich interleaving + asymmetric resilience** — restructured into Phase 1 (all moves, fast serial DB writes, per-item try/catch → a failed move records `failed` and continues) + Phase 2 (fire all enrich jobs). Moves no longer interleave with slow LLM round-trips; a failing move no longer aborts the batch.
+- ✅ [Low, Amelia] **Duplicate itemIds** could land an id in two result buckets — now de-duped (`[...new Set(itemIds)]`).
+- ✅ [Nit, Winston] **Route latency footgun** — the route awaits `settled` (serial enrichment); added a defensive 200-item cap (the bulk composer calls the helper directly, uncapped + fire-and-forget). Documented the manual-await vs bulk-fire-and-forget split.
+
+### File List
+
+- `enrichment/assign.ts` (new) — the shared `assignItems` helper (the ONE assign path): validate target → Phase 1 single-FK moves (de-duped, guarded) → Phase 2 earned-tier enrich-only jobs; returns `{assigned, skipped, notFound, failed, settled}`.
+- `enrichment/assign.test.ts` (new) — 8 tests: move+target-descriptor, field preservation, same-board skip, assign-back-to-Inbox no-op, batch + notFound, unknown-board throw, enrich-failure resilience, AC6 no-auto-assign.
+- `api/v1.ts` (modified) — thin `POST /api/v1/items/assign` route over `assignItems` (validation + 200-item cap + awaits `settled`).
+- `api/v1.test.ts` (modified) — 3 route tests (move, empty-itemIds 400, unknown-board 400).
+- `package.json` (modified) — appended `enrichment/assign.test.ts`.
+
+### Change Log
+
+- 2026-06-23 — Story 14.2 implemented: the one assign verb — `assignItems` (single-FK move-first then earned-tier enrich against the target descriptor; batch-capable; idempotent/reversible) + a thin `POST /api/v1/items/assign` route. The single path the composer (15.2) reuses. 393 pass / 0 fail.
+- 2026-06-23 — Addressed party-mode review: added the AC6 no-auto-assign regression + a genuine enrich-failure batch test; restructured to moves-first/enrich-second (no interleaving, resilient to a failed move); de-duped ids; capped the manual route batch.

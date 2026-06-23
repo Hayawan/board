@@ -7,6 +7,8 @@ import { getItemForUi, listItemsForApi } from "../db/hydrate.js";
 import { patchItemFields, deleteItemWithAssets } from "../db/item-actions.js";
 import { addItemSkill } from "../skills/add-item.js";
 import { INBOX_BOARD_ID } from "../db/seed.js";
+import { captureRegistry } from "../capture/adapter.js";
+import { assignItems } from "../enrichment/assign.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "../skills/types.js";
 
 // Story 12.1 — the encapsulated `/api/v1` surface: a static bearer-token guard +
@@ -200,6 +202,54 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
         }
         reply.code(204);
         return null;
+      });
+
+      // POST /items/assign — the ONE assign verb (Story 14.2). Thin adapter over the
+      // shared `assignItems` helper (the same path the composer 15.2 reuses): single-FK
+      // move to the target board THEN earned-tier enrich against the target descriptor.
+      // Batch-capable. Awaits the earned enrichment so the manual caller gets the
+      // settled (enriched) result; the bulk composer calls the helper directly and may
+      // fire-and-forget instead.
+      v1.post<{ Body: { itemIds?: unknown; boardId?: unknown } }>("/items/assign", async (req, reply) => {
+        const rawIds = req.body?.itemIds;
+        const itemIds = Array.isArray(rawIds)
+          ? rawIds.filter((x): x is string => typeof x === "string" && x.length > 0)
+          : [];
+        const boardId = typeof req.body?.boardId === "string" ? req.body.boardId.trim() : "";
+        if (itemIds.length === 0) {
+          reply.code(400);
+          return { error: "itemIds (a non-empty array of strings) is required" };
+        }
+        // Defensive cap on the manual route: it awaits enrichment (below), which runs
+        // serially on the single writer, so an unbounded batch could block/timeout the
+        // response. The bulk composer (15.2) calls assignItems directly (no cap, fire-
+        // and-forget). 200 is far above any manual triage.
+        if (itemIds.length > 200) {
+          reply.code(400);
+          return { error: "too many itemIds (max 200 per request); use the composer for bulk assignment" };
+        }
+        if (!boardId) {
+          reply.code(400);
+          return { error: "boardId is required" };
+        }
+        try {
+          const result = await assignItems(opts.resolveDb(), {
+            itemIds,
+            boardId,
+            llm: opts.llm,
+            registry: captureRegistry,
+          });
+          await result.settled; // manual assign returns the enriched result
+          return {
+            assigned: result.assigned,
+            skipped: result.skipped,
+            notFound: result.notFound,
+            failed: result.failed,
+          };
+        } catch (err) {
+          reply.code(400);
+          return { error: (err as Error).message };
+        }
       });
 
       // GET /boards — lean targeting list ({id,name,view}); no descriptor needed.

@@ -578,6 +578,60 @@ test("12.2: GET /api/v1/boards returns {id,name,view} for targeting", async () =
   }
 });
 
+// Story 14.2 — POST /api/v1/items/assign (the thin route over assignItems)
+test("14.2: POST /api/v1/items/assign moves items to the target board (single-FK)", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    handle.db.insert(items).values({ id: "a1", boardId: "inbox", source: "https://x" }).run();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items/assign",
+      headers: AUTH,
+      body: JSON.stringify({ itemIds: ["a1"], boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body).assigned, ["a1"]);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "a1")).get().boardId, "library");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("14.2: POST /api/v1/items/assign with empty itemIds → 400", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items/assign",
+      headers: AUTH,
+      body: JSON.stringify({ itemIds: [], boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 400);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("14.2: POST /api/v1/items/assign to an unknown board → 400", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    handle.db.insert(items).values({ id: "a2", boardId: "inbox", source: "https://x" }).run();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items/assign",
+      headers: AUTH,
+      body: JSON.stringify({ itemIds: ["a2"], boardId: "no-such-board" }),
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "a2")).get().boardId, "inbox");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // AC 5 (NFR-BC) — an item created via the legacy/collections path is visible AND
 // mutable via /api/v1 (one store, one set of helpers — no parallel write path).
 test("12.2 (NFR-BC): an item from the collections path is visible + mutable via v1", async () => {
