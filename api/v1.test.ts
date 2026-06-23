@@ -6,6 +6,23 @@ import test from "node:test";
 import { eq } from "drizzle-orm";
 import { buildServer } from "../server.js";
 import { items, assets } from "../db/schema.js";
+import { BOOKMARKS_FILE } from "../storage.js";
+
+// bookmarks.json is a gitignored personal-capture file (absent in CI). The legacy
+// GET /api/bookmarks route reads it with an unguarded readFileSync, so a test that
+// asserts it "serves" must guarantee the file exists, then restore the original.
+function snapshotFile(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+function restoreFile(file: string, snap: string | null): void {
+  if (snap === null) fs.rmSync(file, { force: true });
+  else fs.writeFileSync(file, snap);
+}
 
 // Story 12.1 — static bearer-token auth for the new /api/v1 surface.
 // Hermetic: buildServer({ apiToken, db }) injects a known token + temp seeded DB;
@@ -107,10 +124,14 @@ test("12.1: with NO token configured the v1 surface fails closed (401)", async (
 // AC 3 (NFR-BC) — existing legacy route serves unchanged with NO Authorization header
 test("12.1 (NFR-BC): legacy GET /api/bookmarks still serves with no auth header", async () => {
   const { app, handle, dir } = await seededV1App();
+  // guarantee the gitignored flat-JSON file exists (CI has none), then restore it
+  const snap = snapshotFile(BOOKMARKS_FILE);
+  fs.writeFileSync(BOOKMARKS_FILE, "[]");
   try {
     const res = await app.inject({ method: "GET", url: "/api/bookmarks" });
     assert.equal(res.statusCode, 200, "legacy route must be unaffected by the v1 guard");
   } finally {
+    restoreFile(BOOKMARKS_FILE, snap);
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
