@@ -1,6 +1,6 @@
 # Story 17.1: Export (JSON + Netscape HTML)
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,18 +31,17 @@ so that my data isn't trapped and I can re-import elsewhere.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing export tests first (TDD)** (AC: 1, 2, 3, 4, 5)
-  - [ ] Create `skills/export.test.ts` with a mock `ctx` over a temp seeded DB (Story 1.2 `seed`). Seed 2 inspiration items (one with a `screenshot` asset via `writeItem`) + 1 library item, plus 1 item with `source = null`.
-  - [ ] Assert (JSON): every board (incl. descriptor), every item with the AC-1 fields, the screenshot asset reference (path + hash). Assert (Netscape): one `<A HREF>` per URL-bearing item with `ADD_DATE` + `TAGS`; the `source=null` item is **absent** from Netscape but **present** in JSON.
-  - [ ] Assert (zero-mutation, AC 4): capture board/item/asset row counts + the FTS hit count for a known term **before** the run; assert identical **after** (and/or copy the temp DB file and compare bytes before/after). Run; confirm red (skill absent).
-- [ ] **Task 2 — Implement the JSON serializer (read-only)** (AC: 1, 3)
-  - [ ] Create `db/export.ts` (under `db/`, the data layer — alongside `db/importer.ts`): `exportJson(handle: DbHandle): ExportDocument`. **`select()` only** — read boards/items/assets via Drizzle (`handle.db.select().from(boards|items|assets).all()`); NEVER INSERT/UPDATE/DELETE. Shape items grouped **per board** as record arrays keyed by board id, so the seeded boards' arrays line up with `importRecords`' `MAPPERS` (inspiration/library) for round-trip. Include a top-level `boards[]` (descriptors) and an `assets[]` (or per-item asset refs) carrying `{id,itemId,kind,path,hash,width,height}`.
-- [ ] **Task 3 — Implement the Netscape HTML serializer** (AC: 2)
-  - [ ] In `db/export.ts`: `exportNetscape(handle: DbHandle): string`. Emit the standard header (`<!DOCTYPE NETSCAPE-Bookmark-file-1>`, `<DL>`), one `<DT><A HREF="{escaped source}" ADD_DATE="{createdAt}" TAGS="{comma-joined tag fields}">{escaped title}</A>` per item **with a non-null `source`**, close `</DL>`. HTML-escape url/title/tags (untrusted user data). Resolve tag fields generically from the item's board descriptor (the `type:'tags'` field keys) — fall back to `meta.tags`/`meta.tone`/`topics` if a descriptor lookup isn't wired. Skip URL-less items (AC 2).
-- [ ] **Task 4 — Register the `export` skill on the generic route** (AC: 1, 2)
-  - [ ] Create `skills/export.ts` via `defineSkill('export', …)`: `inputSchema = { format: z.enum(['json','netscape']).default('json') }`; `outputSchema` is a discriminated/union result carrying the JSON document or the Netscape string (real zod, NOT `z.any()` — FR-19). `run(input, ctx)` calls `exportJson(ctx.db)` / `exportNetscape(ctx.db)` — read-only, touches `ctx.db` only via `select()`, no `ctx.queue`/`enqueueWrite` (no writes). Register it in `registerAllSkills(registry)` (`skills/registry.ts:52`) so it is invokable via `POST /skills/export` (the `server.ts:591` route). *(Note: Epic 17 AC1 also mentions a `GET /api/v1/export` alias — that lives on the versioned API surface from Epic 12; the v1 deliverable here is the skill. A GET alias can be a thin follow-up once the v1 router exists.)*
-- [ ] **Task 5 — Wire tests + verify green** (AC: 4, 5)
-  - [ ] Add `skills/export.test.ts` (and a `db/export.test.ts` if the serializers are unit-tested separately) to the `test` script in `package.json`; run `npm test`; confirm green + existing suites unaffected (existing data untouched — NFR-BC).
+- [x] **Task 1 — Failing export tests first (TDD)** (AC: 1, 2, 3, 4, 5)
+  - [x] `db/export.test.ts` over a temp seeded DB: an inspiration item (nested-group fields + a screenshot asset w/ hash + dimensions, status `done`), a library item (flat fields + `analysisProvider`), and a `source=null` item.
+  - [x] Asserts (JSON): every board (incl. descriptor); item fields incl. `status`, `analysis_agent`, `added` (ISO), favorite/notes; asset ref incl. `hash`/`width`/`height`; the `source=null` item present. Asserts (Netscape): one `<A HREF>` per URL-bearing item with `ADD_DATE`+`TAGS`; the URL-less item absent; HTML-escaping. Confirmed red.
+- [x] **Task 2 — JSON serializer (read-only)** (AC: 1, 3)
+  - [x] `db/export.ts` → `exportJson(handle): ExportDocument`. **`select()` only.** Items grouped per board as `importRecords`-compatible record arrays (dotted `fields` un-flattened into nested groups for inspiration; flat keys for library); top-level `boards[]` (descriptors) + `assets[]` (`{id,itemId,kind,path,hash,width,height}`).
+- [x] **Task 3 — Netscape HTML serializer** (AC: 2)
+  - [x] `exportNetscape(handle): string` — standard header + `<DL>`, one escaped `<DT><A HREF ADD_DATE TAGS>title</A>` per URL-bearing item, `</DL>`. Tags resolved generically from the board descriptor's `type:'tags'` field keys (+ `meta.tags`/`meta.tone`/`topics` fallback). URL-less items skipped. HTML-escaped.
+- [x] **Task 4 — Register the `export` skill** (AC: 1, 2)
+  - [x] `skills/export.ts` via `defineSkill('export', {format: enum(json|netscape).default(json)}, <discriminated-union output, real zod>, run)`. `run` calls `exportJson`/`exportNetscape` on `ctx.db` — read-only, no `ctx.queue`. Registered in `registerAllSkills`; invokable via `POST /skills/export`. (The `GET /api/v1/export` alias remains a thin follow-up.)
+- [x] **Task 5 — Wire tests + verify green** (AC: 4, 5)
+  - [x] Registered `db/export.test.ts` + `skills/export.test.ts` in the `test` script; full suite → **423 pass / 0 fail**, existing suites unaffected (NFR-BC).
 
 ## Dev Notes
 
@@ -92,3 +91,40 @@ so that my data isn't trapped and I can re-import elsewhere.
 - [Source: db/seed.ts#26,#76] — the inspiration/library descriptors whose dotted field keys export must un-flatten for round-trip.
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
+### Debug Log References
+
+- RED → GREEN → full regression: **423 pass / 0 fail**, 76 suites.
+- Two esbuild gotchas hit + fixed during impl: an inline `typeof items.$inferSelect` param type (→ used the exported `Item` type) and a JSDoc comment containing `*/` (`analysis_*/screenshot` closed the block comment early → reworded).
+
+### Completion Notes List
+
+- ✅ All ACs satisfied. Export is the inverse of `db/importer.ts`: `select()` only, no `writeItem`/`enqueueWrite`/INSERT/UPDATE/DELETE. The skill wraps the serializers and uses `ctx.db` only (no `ctx.queue`).
+- **Round-trip is symmetric for the two real boards:** `toRecord` un-flattens dotted `fields` into nested groups (inspiration) / leaves flat keys (library); `mapInspiration`/`mapLibrary` re-flatten on re-import. Verified by feeding the export back through `importRecords` into a fresh DB and asserting `meta.audience`/`meta.tags` (inspiration) and `summary`/`topics`/url (library) re-create. Composed/unmapped boards are export-complete but best-effort on re-import (documented — `importRecords` has no MAPPER for them).
+- **Binary assets referenced by path+hash, not inlined** (the user copies `screenshots/` separately, mirroring linkding).
+- **Netscape escaping** covers `& < > " '`; URL-less items skipped (a bookmark needs an HREF); tags from the board's `type:'tags'` fields.
+
+**Party-mode review (Amelia correctness / Quinn QA) — both APPROVE-WITH-NITS; fixes applied before commit:**
+- ✅ [Med, Amelia] **`added` dropped on a falsy `createdAt`** (truthy guard would drop epoch-0). Changed to `!= null` so a legitimate 0 is preserved.
+- ✅ [Med, Quinn] **AC1 under-asserted** — `status`, `analysisProvider/Model`, `added`, and asset `width/height` were emitted but untested. Added assertions (incl. `lib-1.analysis_agent === 'claude'`, an ISO `added`, asset dimensions, and a `done` status).
+- ✅ [Low, Quinn] **Library round-trip was count-only** — added field re-create assertions (`summary`/`topics`/source).
+- ✅ [Low, Quinn] **No empty-DB test** — added one (seeded boards, no items → valid empty document + minimal Netscape file).
+- 📝 [Low, accepted] Inspiration records carry `analysis_*: null` keys the mapper ignores (cosmetic JSON bloat); `ADD_DATE=""` only if `createdAt` were null (it's `NOT NULL` in schema). The `GET /api/v1/export` alias is a deferred thin follow-up (the skill is the deliverable).
+
+### File List
+
+- `db/export.ts` (new) — read-only `exportJson` (per-board importer-compatible records + boards + asset refs) + `exportNetscape` (escaped bookmark file; descriptor-driven tags).
+- `db/export.test.ts` (new) — JSON completeness (incl. status/analysis/added/asset dims), Netscape validity + escaping + URL-less skip, empty-DB, round-trip via `importRecords`, zero-mutation (rows + FTS unchanged).
+- `skills/export.ts` (new) — `defineSkill('export', …)` thin read-only wrapper; discriminated-union output (real zod).
+- `skills/export.test.ts` (new) — registration + `POST /skills/export` route smoke (both formats).
+- `skills/registry.ts` (modified) — registered `exportSkill`.
+- `package.json` (modified) — registered the two new test files.
+
+### Change Log
+
+- 2026-06-23 — Story 17.1: the `export` skill + `db/export.ts` serializers (read-only JSON + Netscape HTML). Full per-board/item/asset JSON re-ingestible via `importRecords` where possible; browser/linkding-compatible bookmark file; binary assets referenced. Zero-mutation proven. 423 pass / 0 fail.
+- 2026-06-23 — Addressed party-mode review: `createdAt` `!= null` guard, AC1 field assertions (status/analysis/added/asset dims), library round-trip assertions, empty-DB test.
