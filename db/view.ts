@@ -1,6 +1,7 @@
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
-import { items, type Item } from './schema.js';
+import { items, views, type Item, type NewView, type View } from './schema.js';
+import { enqueueWrite } from './queue.js';
 import { toFtsPhrase } from './search.js';
 import type { DbHandle } from './index.js';
 
@@ -89,4 +90,16 @@ export function resolveView(handle: DbHandle, view: ViewLike): Item[] {
   const rows = handle.db.select().from(items).where(inArray(items.id, finalIds)).all();
   const pos = new Map(finalIds.map((id, idx) => [id, idx]));
   return rows.sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+}
+
+/**
+ * Story 15.1/15.2 — the additive view INSERT primitive (used by the composer's accept
+ * path). Serialized through the single writer. Additive: it creates one `view` row and
+ * touches no `item`/`board`/`asset` row.
+ */
+export async function createView(handle: DbHandle, view: NewView): Promise<View> {
+  return enqueueWrite(() => {
+    handle.db.insert(views).values(view).run();
+    return handle.db.select().from(views).where(eq(views.id, view.id)).get()!;
+  });
 }
