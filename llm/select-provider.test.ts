@@ -6,7 +6,7 @@ import { loadConfig } from '../config.js';
 import { disabledLlm, EnrichmentDisabledError } from '../skills/types.js';
 import { HttpProvider } from './http-provider.js';
 import { CliProvider } from './cli-provider.js';
-import { selectProvider } from './select-provider.js';
+import { selectProvider, describeProvider } from './select-provider.js';
 
 describe('selectProvider (Story 4.4)', () => {
   // AC 1/3/6 — no provider config → disabledLlm (the C10 no-AI default)
@@ -48,5 +48,30 @@ describe('selectProvider (Story 4.4)', () => {
       () => disabledLlm.complete('p', z.object({})),
       (e: unknown) => e instanceof EnrichmentDisabledError,
     );
+  });
+});
+
+// describeProvider — the human-facing identity of the resolved provider, for /api/meta
+// (so the UI labels the add button and lists only the configured provider). Mirrors
+// selectProvider's precedence (HTTP wins; unknown/incomplete → null).
+describe('describeProvider', () => {
+  it('returns null when no provider is configured', () => {
+    assert.equal(describeProvider(loadConfig({})), null);
+  });
+  it('labels a claude CLI agent', () => {
+    assert.deepEqual(describeProvider(loadConfig({ LLM_AGENT: 'claude' })), { kind: 'cli', agent: 'claude', label: 'Claude Code' });
+  });
+  it('labels a codex CLI agent', () => {
+    assert.deepEqual(describeProvider(loadConfig({ LLM_AGENT: 'codex' })), { kind: 'cli', agent: 'codex', label: 'Codex' });
+  });
+  it('labels an HTTP provider by model, and HTTP wins over a CLI agent', () => {
+    assert.deepEqual(
+      describeProvider(loadConfig({ LLM_BASE_URL: 'http://x/v1', LLM_MODEL: 'gpt-4o', LLM_AGENT: 'claude' })),
+      { kind: 'http', label: 'gpt-4o' },
+    );
+  });
+  it('returns null for an unknown agent or a base-URL without a model (mirrors selectProvider)', () => {
+    assert.equal(describeProvider(loadConfig({ LLM_AGENT: 'cursor' })), null);
+    assert.equal(describeProvider(loadConfig({ LLM_BASE_URL: 'http://x/v1' })), null);
   });
 });

@@ -7,6 +7,7 @@ import { refetchSkill } from './refetch.js';
 import { searchSkill } from './search.js';
 import { composeBoardSkill } from './compose-board.js';
 import { generateFieldsSkill } from './generate-fields.js';
+import { exportSkill } from './export.js';
 import type { Skill } from './types.js';
 
 // Story 3.1 — the skill registry. A FACTORY (not a module-global Map) so each
@@ -59,4 +60,5 @@ export function registerAllSkills(registry: SkillRegistry): void {
   registry.register(searchSkill); // Story 9.1
   registry.register(composeBoardSkill); // Story 10.1
   registry.register(generateFieldsSkill); // Story 10.3
+  registry.register(exportSkill); // Story 17.1
 }

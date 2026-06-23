@@ -26,9 +26,11 @@ import { addItemSkill } from "./skills/add-item.js";
 import { refetchItem, reenrichBoardItems } from "./enrichment/refetch.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
-import { selectProvider } from "./llm/select-provider.js";
+import { selectProvider, describeProvider } from "./llm/select-provider.js";
 import { disabledLlm } from "./skills/types.js";
 import { startSseStream } from "./sse.js";
+import { registerV1Api, sha256Hex } from "./api/v1.js";
+import { buildBookmarklet, TOKEN_PLACEHOLDER } from "./capture-clients/bookmarklet.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
 import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
@@ -310,6 +312,15 @@ export interface BuildServerOptions {
   queue?: JobQueue;
   logger?: Logger;
   llm?: LLMProvider;
+  /**
+   * Story 12.1 — plaintext bearer token for the `/api/v1` surface. Hashed here;
+   * defaults to the configured `config.apiTokenHash`. Pass `null` to force the v1
+   * surface fail-closed (no token). Accepting plaintext is a test-ergonomics seam
+   * (the AC5 `buildServer({ apiToken })` example) — production reads from config.
+   */
+  apiToken?: string | null;
+  /** Story 12.1 — CORS allowlist for `/api/v1`; defaults to `config.corsOrigins`. */
+  corsOrigins?: string[];
 }
 
 export async function buildServer(opts: BuildServerOptions = {}) {
@@ -377,7 +388,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   // when a real LLM transport is selected, false in no-AI mode. The frontend keys
   // the "enrichment disabled" dignified state + the first-run nudge off THIS, never
   // off field-emptiness (an enabled box can legitimately return empty).
-  app.get("/api/meta", async () => ({ providerConfigured: llm !== disabledLlm }));
+  // `provider` is the configured provider's identity (or null) so the UI can label the
+  // add button and list ONLY what's wired up — never a phantom agent. Derived from the
+  // same config selectProvider used, so it can't disagree with `providerConfigured`.
+  app.get("/api/meta", async () => ({
+    providerConfigured: llm !== disabledLlm,
+    provider: llm === disabledLlm ? null : describeProvider(config),
+  }));
 
   // Board edit actions (the "Edit board" modal). Creation is via the compose-board /
   // create-board skills; these cover rename + delete-with-cascade.
@@ -445,6 +462,48 @@ export async function buildServer(opts: BuildServerOptions = {}) {
   app.get("/healthz", async () => ({ ok: true }));
 
   app.get("/", async (_req, reply) => reply.sendFile("index.html"));
+
+  // Story 13.2 — the bookmarklet help surface. Read-only: it serves a small page that
+  // builds a draggable `javascript:` bookmarklet client-side. The instance URL is
+  // derived from the request (works behind a reverse proxy); the token is NEVER
+  // supplied by the server (12.1 holds only the hash) — the page ships a placeholder
+  // the operator replaces with their own BOARD_API_TOKEN in the browser.
+  app.get("/bookmarklet", async (req, reply) => {
+    // SECURITY: `Host` is attacker-controllable. Escape it for the HTML context and
+    // embed all script-side strings with `<` → < so a malicious Host can neither
+    // break out of <code> nor terminate the <script> via "</script>" (JSON.stringify
+    // alone does NOT escape "/"). trustProxy is off, so req.protocol is socket-derived.
+    const htmlEscape = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+    const host = req.headers.host ?? `${config.host}:${config.port}`;
+    const instanceUrl = `${req.protocol}://${host}`;
+    const template = buildBookmarklet({ instanceUrl, token: TOKEN_PLACEHOLDER });
+    const tokenConfigured = config.apiTokenHash !== null;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Board — Save bookmarklet</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem;color:#222}
+input{width:100%;padding:.5rem;font:inherit;border:1px solid #ccc;border-radius:6px;box-sizing:border-box}
+a.bm{display:inline-block;margin:1rem 0;padding:.6rem 1rem;background:#222;color:#fff;border-radius:8px;text-decoration:none}
+code{background:#f3f3f3;padding:.1rem .3rem;border-radius:4px}.muted{color:#777;font-size:13px}</style>
+</head><body>
+<h1>Save to Board</h1>
+<p>Paste your <code>BOARD_API_TOKEN</code>, then drag the button to your bookmarks bar. Clicking it on any page saves that tab to your Inbox.</p>
+<input id="tok" type="text" placeholder="BOARD_API_TOKEN" autocomplete="off" spellcheck="false">
+<p><a class="bm" id="bm" href="#">📥 Save to Board</a></p>
+<p class="muted">Instance: <code>${htmlEscape(instanceUrl)}</code> · Server token configured: ${tokenConfigured ? "yes" : "no — set BOARD_API_TOKEN"}</p>
+<p class="muted">Your token is filled in entirely in your browser; it is never sent to or stored by this page.</p>
+<script>
+var TEMPLATE=${scriptJson(template)},PH=${scriptJson(TOKEN_PLACEHOLDER)};
+var a=document.getElementById('bm'),t=document.getElementById('tok');
+function upd(){a.href=TEMPLATE.split(PH).join(t.value||PH);}
+t.addEventListener('input',upd);upd();
+</script>
+</body></html>`;
+    reply.type("text/html");
+    return html;
+  });
 
   // --- Collections manifest (SQLite-backed cutover) ---
   // Lists the SQLite board rows so composed boards (create-board) appear and deleted
@@ -630,6 +689,30 @@ export async function buildServer(opts: BuildServerOptions = {}) {
       return parsedOutput.data;
     }
   );
+
+  // Story 12.1 — the encapsulated /api/v1 surface (bearer guard + CORS). Registered
+  // as a prefixed plugin so its hook/CORS apply ONLY to v1 routes (NFR-BC). The token
+  // is injectable for hermetic tests; production defaults to the configured hash.
+  // undefined → use the configured hash; any falsy-but-defined value ("" or null) →
+  // fail-closed null; otherwise hash the injected plaintext.
+  const apiTokenHash =
+    opts.apiToken === undefined
+      ? config.apiTokenHash
+      : opts.apiToken
+        ? sha256Hex(opts.apiToken)
+        : null;
+  await registerV1Api(app, {
+    apiTokenHash,
+    corsOrigins: opts.corsOrigins ?? config.corsOrigins,
+    // Story 12.2 — CRUD collaborators. resolveDb is lazy (opts.db ?? getDb()) so
+    // opt-less callers/tests never open the real DB; queue/logger/llm are the same
+    // instances the rest of the app uses (one store, one set of helpers — NFR-BC).
+    resolveDb: () => opts.db ?? getDb(),
+    queue,
+    logger,
+    llm,
+    screenshotsDir,
+  });
 
   return app;
 }

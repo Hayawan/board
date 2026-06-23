@@ -63,6 +63,15 @@ describe('buildEnrichmentPrompt — per-field guidance', () => {
     // a non-enrichable field's description must NOT be solicited (AI never fills it)
     assert.doesNotMatch(prompt, /private/);
   });
+
+  it('asks the model to return a cleaned-up title', () => {
+    const descriptor: BoardDescriptor = {
+      view: 'grid', ingest_mode: 'url-screenshot', enrichment_prompt: 'Analyze it.',
+      fields: [{ key: 'summary', label: 'Summary', type: 'text', enrichable: true }],
+    };
+    const prompt = buildEnrichmentPrompt(descriptor, { title: 'Raw | SEO junk', source: 'https://x', fields: {} });
+    assert.match(prompt, /Also return "title"/);
+  });
 });
 
 describe('runEnrichmentForItem (Story 7.1)', () => {
@@ -101,6 +110,27 @@ describe('runEnrichmentForItem (Story 7.1)', () => {
     assert.equal(f.note_field, undefined, 'non-enrichable field NOT written from enrichment');
     assert.equal(f.notes, undefined, 'system/user field not smuggled into fields');
     assert.equal(row?.notes, 'USER NOTE', 'user notes column untouched');
+  });
+
+  // Title refinement: the LLM may return a `title`, written to the title COLUMN
+  // (not fields) so a cluttered/wrong captured title gets cleaned up on add/refetch.
+  it('writes an LLM-refined title to the item title column', async () => {
+    handle.db.insert(items).values({ id: 'e5', boardId: 'nb', source: 'x', title: 'Raw | junk - SEO', fields: {} }).run();
+    const mock: LLMProvider = { complete: async () => ({ foo_score: 1, title: 'Clean Title' }) as never };
+    await runEnrichmentForItem(handle, { itemId: 'e5', llm: mock });
+    const row = handle.db.select().from(items).where(eq(items.id, 'e5')).get();
+    assert.equal(row?.title, 'Clean Title', 'LLM title refines the column');
+    const f = row?.fields as Record<string, unknown>;
+    assert.equal(f.title, undefined, 'title is a column, never smuggled into fields');
+    assert.equal(f.foo_score, 1, 'enrichable field still written');
+  });
+
+  it('leaves the title unchanged when the LLM omits it', async () => {
+    handle.db.insert(items).values({ id: 'e6', boardId: 'nb', source: 'x', title: 'Keep Me', fields: {} }).run();
+    const mock: LLMProvider = { complete: async () => ({ foo_score: 2 }) as never };
+    await runEnrichmentForItem(handle, { itemId: 'e6', llm: mock });
+    const row = handle.db.select().from(items).where(eq(items.id, 'e6')).get();
+    assert.equal(row?.title, 'Keep Me', 'an omitted title must not blank the column');
   });
 
   // AC 2 — enrichment refreshes search_blob/FTS

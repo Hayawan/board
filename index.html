@@ -300,6 +300,14 @@
     }
     .agent-option:hover { background: var(--border); color: var(--text); }
     .agent-option[aria-checked="true"] { color: var(--accent); }
+    .agent-menu-header {
+      padding: 6px 8px 8px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
     .agent-option[aria-checked="true"]::after {
       content: "✓";
       font-size: 11px;
@@ -741,6 +749,23 @@
       font-size: 12px;
     }
 
+    /* Library/text-board grid tile: no screenshot, scales to text fields. */
+    .lib-grid-card { position: relative; }
+    .lib-grid-card .more-btn-list { position: absolute; top: 10px; right: 10px; }
+    .lib-grid-card .card-body { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+    .lib-grid-card .card-header { margin-bottom: 0; padding-right: 32px; }
+    .lib-grid-host { font-size: 11px; color: var(--text-3); }
+    .lib-grid-summary {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-2);
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
     .card-body {
       padding: 12px 14px;
     }
@@ -975,6 +1000,20 @@
     }
     .modal-overlay.open { display: flex; }
 
+    .llm-code {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 6px 0 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
     .modal {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1205,14 +1244,14 @@
       <input class="add-input" id="add-input" type="url" placeholder="Paste a URL to add..." />
       <div class="add-action" id="add-action">
         <div class="add-button-group">
-          <button class="add-btn" id="add-btn">Add with Claude Code</button>
-          <button class="agent-menu-btn" id="agent-menu-btn" type="button" aria-label="Choose analysis agent" aria-haspopup="menu" aria-expanded="false">
+          <!-- Label + menu are populated at runtime from /api/meta (renderAgentMenu). -->
+          <button class="add-btn" id="add-btn">Add</button>
+          <button class="agent-menu-btn" id="agent-menu-btn" type="button" aria-label="AI provider options" aria-haspopup="menu" aria-expanded="false">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 6h8l-4 5-4-5z"/></svg>
           </button>
         </div>
         <div class="agent-menu" id="agent-menu" role="menu">
-          <button class="agent-option" type="button" role="menuitemradio" data-agent="claude" aria-checked="true">Claude Code</button>
-          <button class="agent-option" type="button" role="menuitemradio" data-agent="codex" aria-checked="false">Codex</button>
+          <button class="agent-option add-llm-option" type="button" role="menuitem">+ Add LLM</button>
         </div>
       </div>
     </div>
@@ -1329,6 +1368,11 @@
   let showFavoritesOnly = false;
   let currentBookmark = null;
   let analysisAgent = 'claude';
+  // null = unknown until /api/meta resolves; then boolean. Drives the add button label
+  // ("Add" vs "Add with <provider>") and the caret menu ("+ Add LLM").
+  let providerConfigured = null;
+  // The configured provider's human label from /api/meta (e.g. "Claude Code"), or null.
+  let providerLabel = null;
   let collections = [];
   let activeCollection = 'inspiration';
   let libraryTopicFilter = '';
@@ -1352,9 +1396,27 @@
   let taxonomy = { audience: [], form: [], domain: [] };
 
   function updateAnalysisAgentControls() {
-    document.getElementById('add-btn').textContent = `Add with ${ANALYSIS_AGENT_LABELS[analysisAgent]}`;
-    document.querySelectorAll('.agent-option').forEach(option => {
-      option.setAttribute('aria-checked', option.dataset.agent === analysisAgent ? 'true' : 'false');
+    const configured = providerConfigured === true;
+    document.getElementById('add-btn').textContent = configured
+      ? `Add with ${providerLabel || 'AI'}`
+      : 'Add';
+    renderAgentMenu(configured);
+  }
+
+  // The caret menu reflects the ACTUAL server config: when AI is wired up it names the
+  // configured provider (only that one — no phantom agents) and always offers a
+  // "+ Add LLM" entry (→ setup directions). innerHTML is rebuilt each call, so the
+  // "+ Add LLM" listener is (re)attached here and never left stale.
+  function renderAgentMenu(configured) {
+    const menu = document.getElementById('agent-menu');
+    const header = (configured && providerLabel)
+      ? `<div class="agent-menu-header">Using ${esc(providerLabel)}</div>`
+      : '';
+    menu.innerHTML = header + '<button class="agent-option add-llm-option" type="button" role="menuitem">+ Add LLM</button>';
+    menu.querySelector('.add-llm-option').addEventListener('click', e => {
+      e.stopPropagation();
+      closeAgentMenu();
+      openAddLlmModal();
     });
   }
 
@@ -1386,14 +1448,27 @@
       if (menu.classList.contains('open')) closeAgentMenu();
       else openAgentMenu();
     });
+    // .agent-option listeners are (re)attached by renderAgentMenu, which owns the
+    // menu's contents (agent picker vs "+ Add LLM").
+  }
 
-    document.querySelectorAll('.agent-option').forEach(option => {
-      option.addEventListener('click', e => {
-        e.stopPropagation();
-        setAnalysisAgent(option.dataset.agent);
-        closeAgentMenu();
-      });
-    });
+  function openAddLlmModal() {
+    showModalContent(`
+      <div class="modal-body">
+        <div class="modal-title-row"><div class="modal-title">Enable AI analysis</div></div>
+        <p style="color:var(--text-2);font-size:14px;margin:4px 0 14px">Board works fully without AI. To auto-summarize and tag what you add, wire up a provider and restart the server. There's no in-app setup yet — set an environment variable:</p>
+        <div class="field-label">Use your Claude (or Codex) subscription — local CLI</div>
+        <pre class="llm-code">LLM_AGENT=claude</pre>
+        <div class="field-label" style="margin-top:14px">…or an OpenAI-compatible API</div>
+        <pre class="llm-code">LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o
+LLM_API_KEY=sk-…</pre>
+        <p style="color:var(--text-3);font-size:12.5px;margin:14px 0 0">Set it in your <code>.env</code> (or process manager), then restart Board. See <code>.env.example</code> for all options.</p>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="add-llm-close">Got it</button>
+        </div>
+      </div>`);
+    document.getElementById('add-llm-close').onclick = closeModal;
   }
 
   function selectedAnalysisAgent() {
@@ -1419,6 +1494,14 @@
     applyCollectionChrome(activeCol);
     applyFilters();
     subscribeToStatus();
+    // Provider state is boot config (can't change at runtime), so fetch it once — not
+    // on every SSE-driven reload, which would churn the add controls mid-interaction.
+    if (providerConfigured === null) {
+      const meta = await fetch('/api/meta').then(r => r.json()).catch(() => ({}));
+      providerConfigured = !!meta.providerConfigured;
+      providerLabel = meta.provider?.label || null;
+      updateAnalysisAgentControls();
+    }
     maybeShowAiNudge();
   }
 
@@ -1428,9 +1511,8 @@
   async function maybeShowAiNudge() {
     if (document.getElementById('ai-nudge')) return;
     try {
-      const meta = await fetch('/api/meta').then(r => r.json());
       const dismissed = localStorage.getItem('board.aiNudgeDismissed') === '1';
-      if (!window.collectionHelpers.shouldShowEnableAiNudge({ providerConfigured: meta.providerConfigured, dismissed })) return;
+      if (!window.collectionHelpers.shouldShowEnableAiNudge({ providerConfigured: !!providerConfigured, dismissed })) return;
       const el = document.createElement('div');
       el.id = 'ai-nudge';
       el.style.cssText = 'position:fixed;bottom:16px;right:16px;max-width:300px;background:var(--surface,#16181d);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.5;color:var(--text-2);box-shadow:0 6px 20px rgba(0,0,0,0.35);z-index:40';
@@ -1934,7 +2016,10 @@
   function render() {
     const activeCol = collections.find(c => c.id === activeCollection);
     if (activeCol && activeCol.type !== 'inspiration') {
-      renderLibraryList();
+      // Non-visual boards (e.g. Library) honor the grid/list toggle too — the grid is
+      // just screenshot-less (the board's descriptor stores no images).
+      if (activeView === 'grid') renderLibraryGrid();
+      else renderLibraryList();
       return;
     }
     if (activeView === 'grid') renderGrid();
@@ -2054,6 +2139,47 @@
       });
     });
     listEl.querySelectorAll('.more-btn-list').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openCtxMenu(btn.dataset.id, btn); });
+    });
+  }
+
+  // Grid view for non-visual boards (Library, composed text boards): the same tile
+  // shell as the inspiration grid, but with NO screenshot area — the board stores no
+  // images. Scales to library fields (type, summary, topics) with graceful fallbacks.
+  function renderLibraryGrid() {
+    const gridEl = document.getElementById('grid-view');
+    const listEl = document.getElementById('list-view');
+    listEl.style.display = 'none';
+    gridEl.style.display = '';
+    if (!filtered.length) {
+      const hasItems = bookmarks.length > 0;
+      gridEl.innerHTML = hasItems
+        ? `<div class="empty" style="grid-column:1/-1;text-align:center;padding:64px 24px">
+            <p style="font-size:15px;color:var(--text-2)">No items match these filters</p>
+          </div>`
+        : emptyState();
+      return;
+    }
+    gridEl.innerHTML = filtered.map(b => `
+      <div class="grid-card lib-grid-card" data-id="${b.id}">
+        <button class="more-btn-list" data-id="${b.id}" title="More">···</button>
+        <div class="card-body">
+          <div class="card-header">
+            <div class="card-title">${esc(b.title || b.url)}</div>
+            ${b.type ? `<span class="lib-type">${esc(b.type)}</span>` : ''}
+          </div>
+          <div class="lib-grid-host">${esc(hostname(b.url))}${b.author ? ` · ${esc(b.author)}` : ''}</div>
+          ${b.summary ? `<p class="lib-grid-summary">${esc(b.summary)}</p>` : ''}
+          ${b.topics?.length ? `<div class="lib-topics">${b.topics.slice(0, 6).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+    gridEl.querySelectorAll('.lib-grid-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (!e.target.closest('.more-btn-list')) openLibraryModal(card.dataset.id);
+      });
+    });
+    gridEl.querySelectorAll('.more-btn-list').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); openCtxMenu(btn.dataset.id, btn); });
     });
   }
@@ -2586,6 +2712,13 @@
   function openCtxMenu(id, anchorEl) {
     ctxTargetId = id;
     closeAllPopovers();
+    // "Replace screenshot" only for boards that support screenshots (visual/grid
+    // boards — matches the server's upload guard). Set both ways every open: the menu
+    // is one shared node, so it must re-show for Inspiration after a Library open.
+    const activeCol = collections.find(c => c.id === activeCollection);
+    const capable = !!(window.collectionHelpers && activeCol &&
+      window.collectionHelpers.collectionChrome(activeCol).screenshot);
+    document.getElementById('ctx-replace-screenshot').style.display = capable ? '' : 'none';
     const menu = document.getElementById('ctx-menu');
     const rect = anchorEl.getBoundingClientRect();
     const menuW = 140;
