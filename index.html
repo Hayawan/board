@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Board</title>
   <link rel="icon" href="/favicon.png" type="image/png" />
+  <!-- Story 13.3: PWA install + Web Share Target. Manifest declares the share_target;
+       the service worker is registered additively and is scoped so it never intercepts
+       /api, /events (SSE), /screenshots, or /share (see sw.js). -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#0c0c0c" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
   <script>
     (() => {
       const stored = localStorage.getItem('theme');

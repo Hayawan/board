@@ -32,7 +32,7 @@ import { startSseStream } from "./sse.js";
 import { registerV1Api, sha256Hex } from "./api/v1.js";
 import { buildBookmarklet, TOKEN_PLACEHOLDER } from "./capture-clients/bookmarklet.js";
 import { captureRegistry, registerAllCaptureAdapters } from "./capture/adapter.js";
-import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
+import { INSPIRATION_BOARD_ID, LIBRARY_BOARD_ID, INBOX_BOARD_ID, INSPIRATION_DESCRIPTOR, LIBRARY_DESCRIPTOR, seed, updateBoardDescriptor } from "./db/seed.js";
 import type { BoardDescriptor } from "./descriptor/types.js";
 
 // Story 7.2: the seeded boards' descriptors, served on /api/collections for the
@@ -503,6 +503,77 @@ t.addEventListener('input',upd);upd();
 </body></html>`;
     reply.type("text/html");
     return html;
+  });
+
+  // Story 13.3 — the PWA Web Share Target handler. The installed PWA's manifest
+  // (manifest.webmanifest) declares share_target → POST /share, so any app's share
+  // sheet can hand board-oss a URL. We reuse the EXACT create path the authed API uses
+  // (addItemSkill → no target board → Inbox + cheap tier, Story 13.1) — not a second
+  // capture path. The server holds only the token HASH (Story 12.1), so it literally
+  // cannot re-POST to the bearer-guarded /api/v1/items; reusing the skill in-process is
+  // the faithful equivalent. The route is intentionally unauthed — the OS share POST
+  // carries no token — which matches the existing root-app posture (the SPA's own
+  // /api/items and /api/collections mutations are likewise unauthed, gated by the
+  // deployment's network boundary, Story 2.4). Encapsulated in its own plugin so its
+  // urlencoded body parser stays scoped and the root app's JSON parser is untouched (NFR-BC).
+  await app.register(async (shareApp) => {
+    // The share_target posts application/x-www-form-urlencoded; parse it to a plain
+    // object. Scoped to this plugin — no @fastify/formbody dependency, no root change.
+    shareApp.addContentTypeParser(
+      "application/x-www-form-urlencoded",
+      { parseAs: "string" },
+      (_req, body, done) => {
+        try {
+          done(null, Object.fromEntries(new URLSearchParams(body as string)));
+        } catch (err) {
+          (err as { statusCode?: number }).statusCode = 400;
+          done(err as Error, undefined);
+        }
+      },
+    );
+
+    shareApp.post<{ Body: { url?: string; text?: string; title?: string } }>(
+      "/share",
+      async (req, reply) => {
+        const b = req.body ?? {};
+        // Prefer an explicit http(s) `url`; Android frequently puts the shared link in
+        // `text` (sometimes amid prose), so fall back to the first URL found in text or
+        // title. A share with no resolvable URL saves nothing (cheap capture needs a URL).
+        // First http(s) URL in the string, with trailing sentence punctuation trimmed
+        // (shared prose like "see https://a.com." must not store the dangling dot).
+        const firstUrl = (s: string | undefined) =>
+          (s ?? "").match(/https?:\/\/\S+/)?.[0].replace(/[).,;:!?\]}'"]+$/, "");
+        const explicit = (b.url ?? "").trim();
+        const url = (/^https?:\/\//i.test(explicit) ? explicit : "") || firstUrl(b.text) || firstUrl(b.title) || "";
+
+        const returnUser = (message: string) => {
+          reply.type("text/html");
+          // A tiny confirmation that returns the user where they came from (one tap,
+          // zero trap): go back if there is history, else land on the app shell.
+          return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Board</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0c0c0c;color:#e8e8e8}</style>
+</head><body><p>${message}</p>
+<script>setTimeout(function(){if(history.length>1){history.back()}else{location.replace('/')}},700)</script>
+</body></html>`;
+        };
+
+        if (!url) {
+          reply.status(400);
+          return returnUser("Nothing to save — no link was shared.");
+        }
+        try {
+          const handle = opts.db ?? getDb();
+          const ctx = buildCtx({ db: handle, queue, logger, llm, boardId: INBOX_BOARD_ID });
+          await addItemSkill.run({ boardId: INBOX_BOARD_ID, source: url }, ctx);
+        } catch (err) {
+          logger.error?.(`[share] capture failed: ${(err as Error).message}`);
+          // Still return the user — a failed save must not trap them in the share view.
+          return returnUser("Couldn’t save that link.");
+        }
+        return returnUser("Saved to your Inbox.");
+      },
+    );
   });
 
   // --- Collections manifest (SQLite-backed cutover) ---
