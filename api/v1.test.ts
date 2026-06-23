@@ -306,6 +306,25 @@ test("12.2: POST /api/v1/items creates a pending item on an existing board", asy
   }
 });
 
+// Story 13.1 AC2 — an omitted target board defaults to the Inbox
+test("13.1: POST /api/v1/items with no boardId lands on the Inbox", async () => {
+  const { app, handle, dir } = await seededV1App();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/items",
+      headers: AUTH,
+      body: JSON.stringify({ url: "https://no-board.example" }), // no boardId
+    });
+    assert.equal(res.statusCode, 201);
+    const id = JSON.parse(res.body).id;
+    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get().boardId, "inbox");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // AC 1 — missing/blank url → 400 (before the DB is touched)
 test("12.2: POST /api/v1/items with a blank url → 400", async () => {
   const { app, handle, dir } = await seededV1App();

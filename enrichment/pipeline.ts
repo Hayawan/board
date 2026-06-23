@@ -24,6 +24,15 @@ export interface CaptureEnrichArgs {
   screenshotsDir?: string;
   timeoutMs?: number;
   timeoutFn?: TimeoutFn;
+  /**
+   * Story 13.1 — enrichment tier. 'earned' (default) runs the expensive descriptor
+   * -driven AI takeaway (existing behavior — every current board keeps it). 'cheap'
+   * runs capture ONLY and skips the enrich hop, so `llm.complete` is never reached
+   * (the Inbox path; the takeaway is earned on assignment, Epic 14). Defaulting to
+   * 'earned' keeps every existing board byte-for-byte unchanged (NFR-BC). Epic 14.1
+   * generalizes this tier selection.
+   */
+  tier?: 'cheap' | 'earned';
 }
 
 /**
@@ -55,7 +64,11 @@ export function runCaptureEnrichJob(handle: DbHandle, args: CaptureEnrichArgs): 
           registerTeardown: (fn) => { captureTeardown = fn; },
         });
       }
-      await runEnrichmentForItem(handle, { itemId: args.itemId, llm: args.llm, signal });
+      // Cheap tier (Inbox): skip the enrich hop entirely so llm.complete is never
+      // reached — the AI takeaway is earned on assignment (Epic 14), not on capture.
+      if (args.tier !== 'cheap') {
+        await runEnrichmentForItem(handle, { itemId: args.itemId, llm: args.llm, signal });
+      }
     },
     teardown: async () => { if (captureTeardown) await captureTeardown(); },
   });

@@ -5,11 +5,22 @@ import { z } from 'zod';
 
 import { boards } from '../db/schema.js';
 import { writeItem } from '../db/queue.js';
+import { INBOX_BOARD_ID } from '../db/seed.js';
 import { captureRegistry } from '../capture/adapter.js';
 import { runCaptureEnrichJob } from '../enrichment/pipeline.js';
 import { config } from '../config.js';
 import type { BoardDescriptor } from '../descriptor/types.js';
 import { defineSkill } from './types.js';
+
+/**
+ * Story 13.1 — select the capture enrichment tier for a board. The Inbox captures
+ * CHEAP (no AI takeaway — earned on assignment, Epic 14); every other board keeps the
+ * EARNED (default) path. Pure + exported so the selection is unit-testable independent
+ * of the fire-and-forget capture job. Epic 14.1 generalizes this.
+ */
+export function captureTierForBoard(boardId: string): 'cheap' | 'earned' {
+  return boardId === INBOX_BOARD_ID ? 'cheap' : 'earned';
+}
 
 // Story 3.4 — add-item: create a PENDING item under a board. v1 scope is exactly
 // "create the pending item, full stop". It deliberately does NOT enqueue a
@@ -58,6 +69,9 @@ export const addItemSkill = defineSkill(
         llm: ctx.llm,
         registry: captureRegistry,
         screenshotsDir: config.screenshotsDir,
+        // Story 13.1 — Inbox capture is cheap (no AI takeaway); every other board
+        // keeps the earned (default) path. 14.1 generalizes this tier selection.
+        tier: captureTierForBoard(input.boardId),
       });
     }
 

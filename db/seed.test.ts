@@ -51,12 +51,12 @@ describe('board seed (Story 1.2)', () => {
     assert.equal((lib?.descriptor as { ingest_mode: string }).ingest_mode, 'url-readable');
   });
 
-  // AC 4 — idempotent
+  // AC 4 — idempotent (3 seed boards since Story 13.1 added the Inbox)
   it('is idempotent — re-running does not duplicate boards', () => {
     seed(handle.db);
     seed(handle.db);
     const all = handle.db.select().from(boards).all();
-    assert.equal(all.length, 2);
+    assert.equal(all.length, 3); // Inspiration + Library + Inbox (13.1)
   });
 
   // AC 3 — stored descriptors are valid

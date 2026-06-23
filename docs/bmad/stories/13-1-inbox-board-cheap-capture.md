@@ -1,6 +1,6 @@
 # Story 13.1: Inbox board + cheap-enrichment capture path
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,24 +31,23 @@ so that I can save anything instantly without deciding where it goes or waiting 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing seed/idempotency + no-regression test first (TDD)** (AC: 1, 5)
-  - [ ] In a new `db/inbox-seed.test.ts` (`node:test`): build a temp DB seeded with Inspiration + Library + a couple of items/assets (the pre-wave shape), with **no** `inbox` board. Run `seed(db)`; assert exactly one `board` row with id `inbox`. Run `seed(db)` again; assert **still** exactly one `inbox` row (idempotent). Assert the Inspiration/Library boards + their items + assets are unchanged at the **row** level (count + a field spot-check).
-  - [ ] **Route-level "serves unchanged" assertion (the mandated NFR-BC proof):** after seeding the Inbox, build the server over the temp DB (`buildServer({ db })`) and `inject()` `GET /api/collections` + a board's `GET /api/collections/:cid/items`; assert the existing Inspiration/Library boards and their items come back **served** unchanged (same ids/fields as before the Inbox was seeded), and that the Inbox now also appears. (AC 5 promises *served* unchanged — exercise the route, not just the rows.)
-  - [ ] Run; confirm red (Inbox not seeded yet).
-- [ ] **Task 2 — Add the Inbox to the seed (mirror `db/seed.ts`'s existence-check idempotency)** (AC: 1)
-  - [ ] Add an `INBOX_BOARD_ID = 'inbox'` constant + an `INBOX_DESCRIPTOR` and a third entry in `SEED_BOARDS` (`db/seed.ts:104`). The Inbox is **typeless**: `view: 'list'` (the scannable list renderer — see the `/api/collections` note below), `ingest_mode: 'url-screenshot'` (so cheap capture yields a thumbnail + title + text for scannability — reuses an Epic-6 adapter, no new adapter), and `fields: []` (no AI-fillable fields → nothing to enrich). The existing `seed()` loop (`db/seed.ts:114`, existence check keyed by stable id) makes it idempotent with no new mechanism — do **not** rewrite `seed()`.
-  - [ ] **`/api/collections` type derivation (`server.ts:466-469`):** with `view:'list'` the Inbox falls through to the existing `view==='grid' ? inspiration : library` rule → it renders with the **library (list) renderer**, which is acceptable for a scannable Inbox, so **no `/api/collections` change is strictly required**. If a distinct Inbox identity/chrome is wanted, add a one-line explicit `b.id === INBOX_BOARD_ID ? 'inbox'` branch (additive); otherwise document that it reuses the list renderer.
-  - [ ] Confirm Task 1's seed/idempotency test goes green; existing seed tests stay green.
-- [ ] **Task 3 — Write the failing cheap-only enrichment test (TDD)** (AC: 3, 5)
-  - [ ] In `enrichment/pipeline.test.ts` (or `db/inbox-seed.test.ts`): seed Inbox + Inspiration in a temp DB; create a pending Inbox item + a pending Inspiration item; run the capture→enrich job for each with a **spy LLM** (records `complete` call count) and a **fake capture adapter** (returns title/text/asset, no real Chrome). Assert: Inbox item → `complete` called **0** times; Inspiration item → `complete` called **1** time. Assert both items reach a terminal status (`done`) and the Inbox item has cheap fields (title) populated.
-  - [ ] Run; confirm red (the pipeline always enriches today).
-- [ ] **Task 4 — Add the cheap-only seam to the capture→enrich pipeline (additive, minimal)** (AC: 3, 4)
-  - [ ] Add an **additive** option to `runCaptureEnrichJob` (`enrichment/pipeline.ts:34`) that skips the enrichment hop (a `tier: 'cheap' | 'earned'` or `skipEnrich` flag, defaulting to today's behavior so **existing boards are unchanged**). When skipping, the job runs capture only (`runCaptureForItem`) and does **not** call `runEnrichmentForItem` (so `llm.complete` is never reached). The item still drives its `processing → done` lifecycle via `runItemJob` (`db/queue.ts:263`).
-  - [ ] In `add-item` (`skills/add-item.ts:52`), pass the cheap tier when `boardId === INBOX_BOARD_ID`; all other boards keep the earned (default) path. (Do **not** build 14.1's general tier-selection machinery here — 14.1 generalizes this; epic 14.1 AC2 says "Confirmed by 13.1's test.")
-- [ ] **Task 5 — Default an omitted target board to the Inbox** (AC: 2)
-  - [ ] On the Story 12.2 create route (`POST /api/v1/items`), when `boardId` is omitted, default it to `INBOX_BOARD_ID`. (The legacy collection route `POST /api/collections/:cid/items`, `server.ts:491`, is cid-scoped and unchanged.) Add a test asserting an omitted-board create lands on `item.board_id = 'inbox'`.
-- [ ] **Task 6 — Wire tests + verify green; confirm no regression** (AC: 1, 3, 5)
-  - [ ] Add the new test file(s) to the `test` script; run the full suite; confirm green and that **all existing suites are unaffected** (Inspiration/Library capture + enrichment paths still call the LLM exactly as before).
+- [x] **Task 1 — Write the failing seed/idempotency + no-regression test first (TDD)** (AC: 1, 5)
+  - [x] New `db/inbox-seed.test.ts`: `preWaveDb()` builds a temp DB with Inspiration + Library + 2 items + 1 asset and **no** `inbox` board. `seed(db)` → exactly one `inbox` row; `seed(db)` again → still one (idempotent). Existing Inspiration item asserted byte-for-byte (`deepEqual`), board descriptor unchanged, asset preserved, item count stable.
+  - [x] **Route-level "serves unchanged" proof:** `buildServer({ db })` + `inject()` `GET /api/collections` (asserts Inspiration/Library present + Inbox now appears) and `GET /api/collections/library/items` (existing item served unchanged).
+  - [x] Ran; confirmed red (Inbox not seeded).
+- [x] **Task 2 — Add the Inbox to the seed (mirror `db/seed.ts`'s existence-check idempotency)** (AC: 1)
+  - [x] Added `INBOX_BOARD_ID = 'inbox'` + `INBOX_DESCRIPTOR` (typeless: `view:'list'`, `ingest_mode:'url-screenshot'`, `fields:[]`, a never-used-but-required `enrichment_prompt`) + a third `SEED_BOARDS` entry. The existing `seed()` loop (existence check by stable id) makes it idempotent — **not rewritten**.
+  - [x] **`/api/collections` type derivation:** with `view:'list'` the Inbox falls through `view==='grid' ? inspiration : library` → renders with the list renderer. No `/api/collections` change required (documented). Existing seed test updated (2 → 3 boards — intentional additive change).
+- [x] **Task 3 — Write the failing cheap-only enrichment test (TDD)** (AC: 3, 5)
+  - [x] In `db/inbox-seed.test.ts`: spy LLM (counts `complete`) + fake capture adapter (no Chrome). Inbox cheap → `complete` **0**; Inspiration earned → `complete` **1**; both reach `done`; Inbox `title` populated by the cheap capture. **Plus a discriminating test** (`tier:'cheap'` on Inspiration, which HAS fields → still 0 complete) so the test isolates the tier flag from the `fields:[]` early-return (review fix).
+  - [x] Ran; confirmed red.
+- [x] **Task 4 — Add the cheap-only seam to the capture→enrich pipeline (additive, minimal)** (AC: 3, 4)
+  - [x] Added `tier?: 'cheap' | 'earned'` to `runCaptureEnrichJob` (`enrichment/pipeline.ts`), defaulting to `'earned'` (existing behavior). `tier !== 'cheap'` gates `runEnrichmentForItem`, so cheap runs capture only and never reaches `llm.complete`. The item still drives `processing → done` via `runItemJob`.
+  - [x] In `add-item`, the tier is selected by a new exported pure helper `captureTierForBoard(boardId)` (`'cheap'` for Inbox, `'earned'` otherwise) — unit-tested independently (review fix; the fire-and-forget capture job made an end-to-end assertion non-deterministic). 14.1 generalizes this.
+- [x] **Task 5 — Default an omitted target board to the Inbox** (AC: 2)
+  - [x] On `POST /api/v1/items`, an omitted/blank `boardId` defaults to `INBOX_BOARD_ID` (`rawBoardId || INBOX_BOARD_ID`); a *provided* unknown board still errors via add-item's existence check. Test asserts an omitted-board create lands on `item.board_id = 'inbox'`. The legacy cid-scoped collections route is unchanged.
+- [x] **Task 6 — Wire tests + verify green; confirm no regression** (AC: 1, 3, 5)
+  - [x] Added `db/inbox-seed.test.ts` to the `test` script; full suite → **372 pass / 0 fail**. Existing Inspiration/Library capture + enrichment paths call the LLM exactly as before (earned default).
 
 ## Dev Notes
 
@@ -97,10 +96,37 @@ so that I can save anything instantly without deciding where it goes or waiting 
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
 ### Debug Log References
+
+- RED → GREEN → full regression: **372 pass / 0 fail**, 59 suites.
+- `db/seed.test.ts` board-count assertion updated 2 → 3 (the Inbox is an intentional additive seed board, not a regression).
 
 ### Completion Notes List
 
+- ✅ All 5 ACs satisfied on the live SQLite store. The Inbox is purely additive: a third `SEED_BOARDS` entry via the unchanged idempotent `seed()` loop; `item.board_id` stays a NOT NULL single FK (Inbox is a board, not a global pool); the cheap-tier flag defaults to `'earned'` so every existing board's capture→enrich is byte-for-byte unchanged.
+- **Cheap on capture, earned on assignment.** `runCaptureEnrichJob` gains `tier`; `'cheap'` (Inbox) skips the enrich hop so `llm.complete` is never called, while capture still populates a scannable title and the item reaches `done`. The expensive AI takeaway is deferred to assignment (Epic 14).
+- **NFR-BC proven, not asserted.** The mandated boot/regression test opens a pre-wave-shaped DB (no inbox), seeds + re-seeds, and proves existing rows (byte-for-byte) AND routes (`/api/collections`, `/items`) serve unchanged with the Inbox added.
+
+**Party-mode review (Winston/Amelia/Quinn) — Quinn flagged CHANGES-REQUESTED; both findings fixed before commit:**
+- ✅ [High] **Confounded cheap-tier test** (Quinn/Amelia/Winston): because the Inbox has `fields:[]`, `runEnrichmentForItem` early-returns (`allowedKeys.size===0`) before `complete` regardless of tier — so the Inbox-only test passed even with the skip line removed. Added a **discriminating test**: `tier:'cheap'` on Inspiration (which HAS enrichable fields) → asserts 0 `complete` calls, which fails iff the pipeline's cheap-skip is removed. The flag is now genuinely guarded — exactly the seam 14.1 builds on.
+- ✅ [Med] **add-item tier selection untested** (Quinn): extracted the selection to a pure exported `captureTierForBoard(boardId)` and unit-tested it (`inbox→cheap`, others→`earned`) — deterministic, avoids the fire-and-forget capture job. Flipping the branch now fails a test.
+- ✅ [Nit] Added a "board descriptor unchanged across re-seed" assertion (Amelia).
+- 📝 [Note for Epic 14] `refetch.ts`/`reenrichBoardItems` omit `tier` → default `'earned'`; harmless for 13.1 (Inbox has no fields) but those paths must become tier-aware when 14.1 generalizes. AC4 (sub-second/non-blocking) is inherited from 12.2/Epic-4's optimistic-return + single-worker queue, not first-party asserted here. AC3's "fetched text" wording is aspirational — `url-screenshot` yields title+screenshot; readable text is `url-readable`'s job (the test asserts title, which is what happens).
+
 ### File List
 
+- `db/seed.ts` (modified) — `INBOX_BOARD_ID`, `INBOX_DESCRIPTOR` (typeless), third `SEED_BOARDS` entry.
+- `enrichment/pipeline.ts` (modified) — additive `tier?: 'cheap' | 'earned'` on `runCaptureEnrichJob`; `'cheap'` skips the enrich hop.
+- `skills/add-item.ts` (modified) — exported pure `captureTierForBoard(boardId)`; passes the tier to the capture job.
+- `api/v1.ts` (modified) — `POST /items` defaults an omitted/blank `boardId` to the Inbox.
+- `db/inbox-seed.test.ts` (new) — seed idempotency + byte-for-byte preservation + route-serves-unchanged; cheap-vs-earned spy LLM + discriminating cheap-on-Inspiration; `captureTierForBoard` unit test.
+- `api/v1.test.ts` (modified) — omitted-boardId → Inbox test.
+- `db/seed.test.ts` (modified) — board count 2 → 3 (additive Inbox).
+- `package.json` (modified) — appended `db/inbox-seed.test.ts` to the `test` script.
+
 ### Change Log
+
+- 2026-06-23 — Story 13.1 implemented: additive typeless Inbox seed board (idempotent), cheap-tier capture seam (`runCaptureEnrichJob` `tier`, default earned), `captureTierForBoard` selection (Inbox→cheap), and an omitted-board→Inbox default on `POST /api/v1/items`. NFR-BC proven by a pre-wave boot/regression test. 372 pass / 0 fail. Status → review.
+- 2026-06-23 — Addressed party-mode review (Quinn CHANGES-REQUESTED): added a discriminating cheap-on-Inspiration test (isolates the tier flag from the fields:[] early-return) + a `captureTierForBoard` unit test + a board-descriptor-unchanged assertion.

@@ -6,6 +6,7 @@ import { boards } from "../db/schema.js";
 import { getItemForUi, listItemsForApi } from "../db/hydrate.js";
 import { patchItemFields, deleteItemWithAssets } from "../db/item-actions.js";
 import { addItemSkill } from "../skills/add-item.js";
+import { INBOX_BOARD_ID } from "../db/seed.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "../skills/types.js";
 
 // Story 12.1 — the encapsulated `/api/v1` surface: a static bearer-token guard +
@@ -120,12 +121,11 @@ export async function registerV1Api(app: FastifyInstance, opts: V1Options): Prom
           reply.code(400);
           return { error: "url is required" };
         }
-        // 12.2 requires an explicit existing board (the Inbox default is 13.1's job).
-        const boardId = typeof req.body?.boardId === "string" ? req.body.boardId.trim() : "";
-        if (!boardId) {
-          reply.code(400);
-          return { error: "boardId is required" };
-        }
+        // Story 13.1 — an omitted/blank target board defaults to the Inbox (the
+        // capture funnel: save anything without deciding where it goes). A *provided*
+        // unknown board still errors via addItemSkill's existence check below.
+        const rawBoardId = typeof req.body?.boardId === "string" ? req.body.boardId.trim() : "";
+        const boardId = rawBoardId || INBOX_BOARD_ID;
         const handle = opts.resolveDb();
         const ctx = buildCtx({
           db: handle,
