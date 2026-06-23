@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Board review lane — settings</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 520px; margin: 2rem auto; padding: 0 1rem; background: #0c0c0c; color: #e8e8e8; }
+    label { display: block; margin: 1rem 0 .25rem; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; padding: .5rem; font: inherit; background: #161616; color: #e8e8e8; border: 1px solid #333; border-radius: 8px; }
+    button { font: inherit; cursor: pointer; margin-top: 1.25rem; padding: .5rem 1rem; border-radius: 8px; border: 1px solid #7c9cff; background: #7c9cff; color: #0c0c0c; font-weight: 600; }
+    .muted { color: #888; font-size: 13px; }
+    #status { margin-top: 1rem; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Board — review lane settings</h1>
+  <label for="url">Instance URL</label>
+  <input id="url" type="url" placeholder="http://localhost:3141" autocomplete="off" spellcheck="false" />
+  <label for="token">API token (<code>BOARD_API_TOKEN</code>)</label>
+  <input id="token" type="password" placeholder="your secret token" autocomplete="off" spellcheck="false" />
+  <p class="muted">Stored locally in this browser only (never synced, never logged) and sent only as a Bearer header to your instance.</p>
+  <button id="save">Save settings</button>
+  <div id="status" class="muted"></div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
