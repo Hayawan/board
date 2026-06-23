@@ -97,6 +97,8 @@ Standard recommendation: **store screenshot files on disk** (content-addressed d
 
 ## 3. Competitive note — the nearest self-hosted competitors
 
+> See also [`competitive-linkding.md`](./competitive-linkding.md) for a full feature inventory + head-to-head against **linkding** — the lightest and most mature self-hosted bookmark manager, omitted from the table below.
+
 | | **Karakeep** (ex-Hoarder) | **Linkwarden** |
 |---|---|---|
 | Stack | Next.js + tRPC + Drizzle + **SQLite**; dedicated **worker** | Next.js + Prisma + **Postgres** |
