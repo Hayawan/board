@@ -1,6 +1,6 @@
 # Story 14.1: Cheap-vs-earned enrichment split
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,18 +34,20 @@ so that AI compute is spent on links that earned a purpose, not on bucket churn.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing tier-selection test first (TDD)** (AC: 1, 2, 6)
-  - [ ] In `enrichment/pipeline.test.ts` (extend) or a new `enrichment/tier.test.ts`: seed a temp DB + board; run the pipeline in **cheap** mode with a fake `LLMProvider` whose `complete` increments a counter; assert the item reaches a terminal status AND the counter is `0` (no LLM). Run; confirm red.
-- [ ] **Task 2 — Add a tier seam to the capture→enrich pipeline** (AC: 1, 2)
-  - [ ] Generalize `runCaptureEnrichJob` (`enrichment/pipeline.ts:34`) to accept a `tier: 'cheap' | 'earned'` (default `'earned'` to preserve every existing caller's behavior). `cheap` runs `runCaptureForItem` then **skips** the `runEnrichmentForItem` call (`pipeline.ts:58`). `earned` keeps today's behavior exactly. Do NOT add a second worker — one pipeline, one parameter.
-- [ ] **Task 3 — Write the failing earned-tier test** (AC: 3, 6)
-  - [ ] Test: run the pipeline in **earned** mode with the fake provider; assert `complete` called once and the descriptor passed reflects the item's board (target schema). Run; confirm red, then green via Task 2's `earned` branch (already the default path).
-- [ ] **Task 4 — Write the failing NFR-BC regression test** (AC: 4)
-  - [ ] Test: seed a pre-wave DB with an `inspiration` board + an item at status `done` with populated `fields`; load the split code; assert that merely importing/wiring the tier seam touches NOTHING — the enriched item's `status`, `fields`, `title`, `updatedAt` are unchanged (no code path iterates existing rows). Run; confirm it passes (proves additivity), and would fail if a naive impl re-enriched on boot.
-- [ ] **Task 5 — Confirm graceful no-LLM in the earned tier** (AC: 5)
-  - [ ] Test: earned tier with `disabledLlm` → item ends `done` (not `error`), via the existing `runItemJob` `EnrichmentDisabledError` classification (`db/queue.ts:278`). Assert terminal status is `done`.
-- [ ] **Task 6 — Wire tests + verify green** (AC: 6)
-  - [ ] Add the new test file to the `test` script; run `npm test`; confirm green + existing `pipeline.test.ts` / `worker.test.ts` suites unaffected (no caller broke because `earned` is the default).
+> **Implementation note (read first):** Story **13.1 already delivered the production seam** this story specifies — `runCaptureEnrichJob` already accepts `tier: 'cheap' | 'earned'` (default `'earned'`), `cheap` already skips `runEnrichmentForItem`, and existing callers are unchanged. So 14.1 added **no new production code**; its deliverable is the formal **tier-contract test suite** (`enrichment/tier.test.ts`) that locks the contract 14.2 (assign→earned) depends on, plus the AC3/AC4/AC5 coverage 13.1 didn't have. Tasks 2's seam is therefore marked done-by-13.1.
+
+- [x] **Task 1 — Tier-selection test (cheap → 0 LLM, terminal)** (AC: 1, 2, 6)
+  - [x] `enrichment/tier.test.ts`: runs the pipeline in **cheap** mode against **Inspiration** (a board WITH enrichable fields) with a fake provider counting `complete`; asserts `0` calls AND terminal `done`. Load-bearing — uses a fields-bearing board so the 0-call result is driven by the tier flag, not the `fields:[]` early-return (the confound from 13.1's first cut).
+- [x] **Task 2 — Tier seam on the pipeline** (AC: 1, 2) — **delivered in 13.1.**
+  - [x] `runCaptureEnrichJob` accepts `tier: 'cheap' | 'earned'` (default `'earned'`); `cheap` runs capture then skips `runEnrichmentForItem`; `earned` = today's behavior. One pipeline, one parameter (no second worker). Verified by Task 1/3 tests.
+- [x] **Task 3 — Earned-tier test (1 call, against the TARGET descriptor)** (AC: 3, 6)
+  - [x] Earned mode → asserts `complete` called once AND the prompt reflects the item's board (`/design inspiration/i` — Inspiration's descriptor signature, which a wrong-board descriptor would not match). Plus a default-tier test (omitted `tier` → earned) proving NFR-BC for existing callers.
+- [x] **Task 4 — NFR-BC regression test** (AC: 4)
+  - [x] Reframed to be **load-bearing** (review fix): an **earned** enrichment of one Inspiration item (with an overwriting provider) must NOT re-touch a **sibling** already-enriched Inspiration item — proving enrichment is single-item scoped. A naive board-wide re-enrich would overwrite the sibling's fields and fail the `deepEqual`. (The original "cheap job on item X leaves item Y" test was theater — it passed under any impl.)
+- [x] **Task 5 — Graceful no-LLM in the earned tier** (AC: 5)
+  - [x] Earned tier with `disabledLlm` → asserts terminal `done` (not `error`), exercising the existing `EnrichmentDisabledError → done` classification.
+- [x] **Task 6 — Wire tests + verify green** (AC: 6)
+  - [x] Added `enrichment/tier.test.ts` to the `test` script; full suite → **382 pass / 0 fail**; existing `pipeline.test.ts` / `worker.test.ts` unaffected (earned is the default).
 
 ## Dev Notes
 
@@ -88,3 +90,32 @@ so that AI compute is spent on links that earned a purpose, not on bucket churn.
 - [Source: enrichment/refetch.ts#L46] — `reenrichBoardItems` (enrich-only batch pattern; unchanged, still earned).
 
 ## Dev Agent Record
+
+### Agent Model Used
+
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
+### Debug Log References
+
+- `enrichment/tier.test.ts` → 5 pass; full suite → **382 pass / 0 fail**, 63 suites.
+
+### Completion Notes List
+
+- ✅ All 6 ACs satisfied. **The production seam was delivered in 13.1** (the `tier` parameter is the general pipeline knob AC1 describes, not an Inbox-specific hack) — so 14.1 adds the formal tier-contract test suite, not new code. This is honest: 14.2 (assign→earned) needs a locked contract for "cheap=no LLM, earned=against the target board descriptor, no re-enrichment of existing rows, graceful no-LLM," and 14.1 provides exactly that.
+- **Earned-tier entry point for 14.2 already exists by construction:** `runCaptureEnrichJob` with `source` omitted skips capture (`canCapture` gates on `!!args.source`) and runs enrich-only at the earned tier — that's the call 14.2 makes after the FK move. Confirmed, no new code needed.
+
+**Party-mode review (Quinn QA) — APPROVE-WITH-NITS; the substantive nit fixed before commit:**
+- ✅ [Nit→fixed] **AC4 test was theater** (Quinn): "a cheap job on item X leaves item Y unchanged" passes under *any* implementation (a cheap job structurally can't touch a different row) — it guarded nothing. Reframed to a load-bearing test: an **earned** enrichment of one item must not re-touch a **sibling** enriched item on the same board (single-item scope), with an overwriting provider so a board-wide re-enrich regression would fail the assertion.
+- 📝 [Nit, accepted] Partial overlap with 13.1's `inbox-seed.test.ts` cheap/earned tests. `tier.test.ts` is the canonical tier-contract owner and adds genuinely new coverage (AC3 target-descriptor prompt assertion, default-tier, AC5 `disabledLlm→done`); 13.1's discriminating test stays for 13.1's standalone coverage. Defensive, net-positive overlap.
+- 📝 [Note for 14.2] Every earned test here exercises the capture+enrich shape; the enrich-only (source-omitted) earned shape that 14.2's assign path invokes is 14.2's test to own.
+
+### File List
+
+- `enrichment/tier.test.ts` (new) — the tier contract: cheap→0 LLM (on a fields-bearing board, load-bearing), earned→1 against the target descriptor, default-tier=earned, sibling-not-re-enriched (AC4 load-bearing), `disabledLlm`→done.
+- `package.json` (modified) — appended `enrichment/tier.test.ts` to the `test` script.
+- (No production change — the `tier` seam in `enrichment/pipeline.ts` was delivered in Story 13.1.)
+
+### Change Log
+
+- 2026-06-23 — Story 14.1: formalized the cheap-vs-earned tier contract in `enrichment/tier.test.ts` (the production seam shipped in 13.1). Covers cheap=no-LLM, earned-against-target-descriptor, single-item-scope no-regression, and graceful no-LLM. 382 pass / 0 fail.
+- 2026-06-23 — Addressed party-mode review: reframed the AC4 regression from a tautological test to a load-bearing single-item-scope assertion.
