@@ -24,6 +24,7 @@ import { renameBoard, deleteBoardCascade } from "./db/board-actions.js";
 import { boards as boardsTable } from "./db/schema.js";
 import { addItemSkill } from "./skills/add-item.js";
 import { refetchItem, reenrichBoardItems } from "./enrichment/refetch.js";
+import { assignItems } from "./enrichment/assign.js";
 import { archiveFootprint } from "./db/archive-footprint.js";
 import { createRegistry, registerAllSkills, type SkillRegistry } from "./skills/registry.js";
 import { buildCtx, type JobQueue, type LLMProvider, type Logger } from "./skills/types.js";
@@ -664,6 +665,38 @@ t.addEventListener('input',upd);upd();
       if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
       reply.status(204);
       return null;
+    }
+  );
+
+  // Per-item move (Inbox triage / re-filing). Same-origin twin of the v1 assign verb
+  // (api/v1.ts) — the SPA can't carry the v1 bearer token, and a move is no more
+  // sensitive than the unauthed delete/patch routes beside it (gate parity). Reuses
+  // assignItems (single-FK reassign + fire-and-forget earned-tier re-enrich against
+  // the TARGET descriptor). UNLIKE the v1 route we do NOT await result.settled: this
+  // is an interactive triage action, and blocking on serial LLM enrichment would make
+  // it sluggish; the target board fetches fresh fields on navigation. An unknown
+  // target board (incl. any view id — views live in a separate table, never in
+  // `boards`) throws → 400; an unknown item → 404.
+  app.post<{ Params: { cid: string; id: string }; Body: { boardId?: string } }>(
+    "/api/collections/:cid/items/:id/move",
+    async (req, reply) => {
+      const boardId = (req.body?.boardId ?? "").trim();
+      if (!boardId) { reply.status(400); return { error: "boardId is required" }; }
+      const handle = opts.db ?? getDb();
+      try {
+        const result = await assignItems(handle, {
+          itemIds: [req.params.id],
+          boardId,
+          llm,
+          registry: captureRegistry,
+          enqueueSnapshot: opts.enqueueSnapshot, // archives-on-promote boards snapshot the moved item
+        });
+        if (result.notFound.length) { reply.status(404); return { error: "Not found" }; }
+        return { assigned: result.assigned, skipped: result.skipped, failed: result.failed };
+      } catch (err) {
+        reply.status(400);
+        return { error: (err as Error).message };
+      }
     }
   );
 

@@ -576,6 +576,48 @@
     .delete-cancel-btn { background: transparent; border: 1px solid var(--border) !important; color: var(--text-3); }
     .delete-cancel-btn:hover { color: var(--text); }
 
+    /* ── Move popover ── */
+    .move-popover {
+      position: fixed;
+      z-index: 400;
+      background: var(--surface-2);
+      border: 1px solid var(--border-hover);
+      border-radius: var(--radius);
+      padding: 10px;
+      width: 240px;
+      max-height: 340px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: none;
+      flex-direction: column;
+    }
+    .move-popover.open { display: flex; }
+    .move-popover-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-3);
+      margin: 0 2px 8px;
+    }
+    .move-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+    .move-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 9px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text-2);
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      transition: background 0.1s, color 0.1s;
+    }
+    .move-option:hover { background: var(--border); color: var(--text); }
+    .move-empty { font-size: 12px; color: var(--text-3); padding: 4px 2px; line-height: 1.45; }
+
     /* ── List view fav indicator ── */
     .list-fav-dot {
       width: 7px;
@@ -1442,6 +1484,10 @@
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3"/><path d="M13 3v3h-3"/></svg>
     Refetch
   </button>
+  <button class="ctx-item" id="ctx-move">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5h4.5L8 6h6v6.5H2z"/><path d="M6.5 9h4M9 7.2 11.3 9 9 10.8"/></svg>
+    Move to board
+  </button>
   <button class="ctx-item" id="ctx-replace-screenshot">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><circle cx="6" cy="7" r="1.3"/><path d="m3 12 3.5-3.5L9 11l3-3 1 1"/></svg>
     Replace screenshot
@@ -1469,6 +1515,11 @@
     <button class="delete-cancel-btn" id="delete-cancel">Cancel</button>
     <button class="delete-confirm" id="delete-confirm">Delete</button>
   </div>
+</div>
+
+<div class="move-popover" id="move-popover">
+  <div class="move-popover-label">Move to board</div>
+  <div class="move-list" id="move-list"></div>
 </div>
 
 <div class="fav-popover" id="fav-popover">
@@ -2858,6 +2909,12 @@ LLM_API_KEY=sk-…</pre>
     openRefetchPopover(ctxTargetId);
   });
 
+  document.getElementById('ctx-move').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCtxMenu();
+    openMovePopover(ctxTargetId);
+  });
+
   document.getElementById('ctx-delete').addEventListener('click', (e) => {
     e.stopPropagation();
     closeCtxMenu();
@@ -2989,11 +3046,75 @@ LLM_API_KEY=sk-…</pre>
     applyFilters();
   });
 
+  // ── Move popover ──
+  let moveTargetId = null;
+
+  function openMovePopover(id) {
+    moveTargetId = id;
+    const list = document.getElementById('move-list');
+    // Targets = every real board except the one we're viewing. Views never appear here:
+    // /api/collections returns only rows from the `board` table (views live in a
+    // separate table), so this list can't corrupt a view by making it a home board.
+    const targets = collections.filter(c => c.id !== activeCollection);
+    if (!targets.length) {
+      list.innerHTML = '<div class="move-empty">No other boards yet. Create one to file items onto.</div>';
+    } else {
+      list.innerHTML = targets.map(c =>
+        `<button class="move-option" data-board-id="${esc(c.id)}">${esc(c.name)}</button>`
+      ).join('');
+      list.querySelectorAll('.move-option').forEach(btn => {
+        btn.addEventListener('click', () => moveItemTo(btn.dataset.boardId));
+      });
+    }
+    const popover = document.getElementById('move-popover');
+    popover.style.top = '120px';
+    popover.style.left = '50%';
+    popover.style.transform = 'translateX(-50%)';
+    popover.classList.add('open');
+  }
+
+  function closeMovePopover() {
+    document.getElementById('move-popover').classList.remove('open');
+    moveTargetId = null;
+  }
+
+  async function moveItemTo(boardId) {
+    const id = moveTargetId;
+    if (!id || !boardId) return;
+    const target = collections.find(c => c.id === boardId);
+    let body = {};
+    try {
+      const res = await fetch(window.collectionHelpers.moveUrl(activeCollection, id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boardId }),
+      });
+      body = await res.json().catch(() => ({}));
+      // Only drop the card if the move actually took (partial failures land in
+      // failed/notFound, not assigned).
+      if (!res.ok || !(Array.isArray(body.assigned) && body.assigned.includes(id))) {
+        alert(body.error || `Couldn't move to ${target ? target.name : boardId}.`);
+        return;
+      }
+    } catch (e) {
+      alert('Could not reach the server to move this item.');
+      return;
+    }
+    // It now lives on another board — remove it from the current view.
+    bookmarks = bookmarks.filter(b => b.id !== id);
+    closeMovePopover();
+    if (currentBookmark && currentBookmark.id === id) closeModal();
+    if (activeCollection === 'inspiration') buildTagCloud();
+    else renderLibraryTopicCloud();
+    applyFilters();
+  }
+
   // Close all popovers helper
   function closeAllPopovers() {
     closeCtxMenu();
     closeRefetchPopover();
     closeDeletePopover();
+    closeMovePopover();
     closeFavPopover();
     closeAgentMenu();
   }
@@ -3001,6 +3122,7 @@ LLM_API_KEY=sk-…</pre>
   // Stop propagation inside popovers so outside-click doesn't fire
   document.getElementById('refetch-popover').addEventListener('click', e => e.stopPropagation());
   document.getElementById('delete-popover').addEventListener('click', e => e.stopPropagation());
+  document.getElementById('move-popover').addEventListener('click', e => e.stopPropagation());
   document.getElementById('ctx-menu').addEventListener('click', e => e.stopPropagation());
   document.getElementById('agent-menu').addEventListener('click', e => e.stopPropagation());
 
@@ -3011,6 +3133,7 @@ LLM_API_KEY=sk-…</pre>
     }
     if (!e.target.closest('#refetch-popover')) closeRefetchPopover();
     if (!e.target.closest('#delete-popover')) closeDeletePopover();
+    if (!e.target.closest('#move-popover')) closeMovePopover();
     if (!e.target.closest('#add-action')) closeAgentMenu();
   });
 
@@ -3183,8 +3306,8 @@ LLM_API_KEY=sk-…</pre>
   // load() is called by the module script below after collectionHelpers are initialized
 </script>
 <script type="module">
-  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge } from './collections-ui.js';
-  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge };
+  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge } from './collections-ui.js';
+  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge };
   // Story 7.2: generic descriptor-driven field renderer (Epic 8 wires it into the
   // descriptor-driven card/modal when the UI consumes the SQLite item model).
   import { renderField, renderFields, renderAsset, isSafeUrl } from './descriptor/render-map.js';

@@ -122,6 +122,80 @@ test("DELETE /api/collections/:cid/items/:id removes the item (204, SQLite)", as
   }
 });
 
+test("POST /api/collections/:cid/items/:id/move reassigns the item's home board (SQLite)", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { eq } = await import("drizzle-orm");
+  const { items } = await import("./db/schema.js");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    await writeItem(handle, { id: "mv-1", boardId: "inbox", source: "https://x", title: "T" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/collections/inbox/items/mv-1/move",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual((JSON.parse(res.body) as any).assigned, ["mv-1"]);
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "mv-1")).get()?.boardId, "library");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("POST .../move returns 400 for a missing boardId", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    await writeItem(handle, { id: "mv-2", boardId: "inbox", source: "https://x", title: "T" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/collections/inbox/items/mv-2/move",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.statusCode, 400);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("POST .../move returns 400 for an unknown target board", async () => {
+  const { writeItem } = await import("./db/queue.js");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    await writeItem(handle, { id: "mv-3", boardId: "inbox", source: "https://x", title: "T" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/collections/inbox/items/mv-3/move",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ boardId: "no-such-board" }),
+    });
+    assert.equal(res.statusCode, 400);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("POST .../move returns 404 for an unknown item", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/collections/inbox/items/ghost/move",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ boardId: "library" }),
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- Unknown cid ---
 
 test("GET /api/collections/no-such-cid/items returns an empty list (unknown board)", async () => {

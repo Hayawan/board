@@ -7,6 +7,7 @@ import {
   addUrl,
   refetchUrl,
   screenshotUrl,
+  moveUrl,
   skillsUrl,
   eventsUrl,
   collectionChrome,
@@ -84,6 +85,11 @@ test("refetchUrl builds correct path", () => {
 
 test("screenshotUrl builds correct path", () => {
   assert.equal(screenshotUrl("inspiration", "bm-001"), "/api/collections/inspiration/items/bm-001/screenshot");
+});
+
+test("moveUrl builds the per-item move path", () => {
+  assert.equal(moveUrl("inbox", "it-001"), "/api/collections/inbox/items/it-001/move");
+  assert.equal(moveUrl("inspiration", "bm-abc"), "/api/collections/inspiration/items/bm-abc/move");
 });
 
 // --- collectionChrome ---
