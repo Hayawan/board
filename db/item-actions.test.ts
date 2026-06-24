@@ -93,3 +93,50 @@ describe('per-item actions (Story 8.3)', () => {
     assert.equal(get('del2'), undefined);
   });
 });
+
+// Follow-up fix (post-Epic-16): deleteItemWithAssets must resolve each asset under its
+// OWN subdir from the stored relative path — Epic 16 snapshot assets live in snapshots/,
+// not screenshots/, so the old basename-under-screenshotsDir unlink orphaned the .html.
+describe('deleteItemWithAssets — resolves assets by their stored relative path', () => {
+  it('unlinks a snapshots/<id>.html asset (not only screenshots/)', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'board-oss-snapdel-'));
+    const h = initDb(join(d, 'a.db'));
+    try {
+      mkdirSync(join(d, 'snapshots'), { recursive: true });
+      writeFileSync(join(d, 'snapshots', 'snap1.html'), '<html>archived</html>');
+      h.db.insert(boards).values({ id: 'b', name: 'B', view: 'list', descriptor: DESCRIPTOR }).run();
+      h.db.insert(items).values({ id: 'snapitem', boardId: 'b', source: 'x' }).run();
+      h.db.insert(assets).values({ id: 'a1', itemId: 'snapitem', kind: 'snapshot', path: 'snapshots/snap1.html', hash: 'h' }).run();
+
+      const res = await deleteItemWithAssets(h, 'snapitem', join(d, 'screenshots'));
+      assert.equal(res.filesRemoved, 1, 'the snapshot .html was unlinked');
+      assert.ok(!existsSync(join(d, 'snapshots', 'snap1.html')), 'snapshot file removed from its OWN dir');
+    } finally {
+      h.sqlite.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('does not cross-delete two assets that share a basename across dirs', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'board-oss-snapdel-'));
+    const h = initDb(join(d, 'a.db'));
+    try {
+      mkdirSync(join(d, 'screenshots'), { recursive: true });
+      mkdirSync(join(d, 'snapshots'), { recursive: true });
+      writeFileSync(join(d, 'screenshots', 'x.png'), 'PNG');
+      writeFileSync(join(d, 'snapshots', 'x.png'), 'SNAP'); // same basename, different dir
+      h.db.insert(boards).values({ id: 'b', name: 'B', view: 'list', descriptor: DESCRIPTOR }).run();
+      h.db.insert(items).values({ id: 'i1', boardId: 'b', source: 'x' }).run();
+      h.db.insert(items).values({ id: 'i2', boardId: 'b', source: 'y' }).run();
+      h.db.insert(assets).values({ id: 'a1', itemId: 'i1', kind: 'screenshot', path: 'screenshots/x.png', hash: 'h1' }).run();
+      h.db.insert(assets).values({ id: 'a2', itemId: 'i2', kind: 'snapshot', path: 'snapshots/x.png', hash: 'h2' }).run();
+
+      await deleteItemWithAssets(h, 'i1', join(d, 'screenshots'));
+      assert.ok(!existsSync(join(d, 'screenshots', 'x.png')), 'the deleted item\'s own file is removed');
+      assert.ok(existsSync(join(d, 'snapshots', 'x.png')), 'the other item\'s same-basename file survives (no cross-delete)');
+    } finally {
+      h.sqlite.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
