@@ -78,10 +78,19 @@ export const BoardDescriptorSchema = z.object({
   enrichment_prompt: z.string(),
   view: z.enum(['grid', 'list']),
   ingest_mode: z.enum(['url-screenshot', 'url-readable', 'manual-upload']),
+  // Story 16.2 — OPTIONAL, default-off: when true, promoting (assigning) an item to this
+  // board enqueues a self-contained-HTML snapshot (Story 16.1) for that item. Additive —
+  // every pre-wave descriptor (without it) still validates and reads archival OFF (NFR-BC).
+  archive_on_promote: z.boolean().optional(),
 });
 
 export type Field = z.infer<typeof FieldSchema>;
 export type BoardDescriptor = z.infer<typeof BoardDescriptorSchema>;
+
+/** Story 16.2 — does this board archive (snapshot) items on promotion? Default OFF. */
+export function archivesOnPromote(descriptor: BoardDescriptor | null | undefined): boolean {
+  return descriptor?.archive_on_promote === true;
+}
 
 /**
  * Parse + validate a descriptor against the closed field-type set. Returns the

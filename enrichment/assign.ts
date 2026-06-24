@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import { boards, items } from '../db/schema.js';
 import { writeItem, type TimeoutFn } from '../db/queue.js';
 import { runCaptureEnrichJob } from './pipeline.js';
+import { runSnapshotJob } from '../capture/url-snapshot.js';
+import { archivesOnPromote, type BoardDescriptor } from '../descriptor/types.js';
 import type { CaptureRegistry } from '../capture/adapter.js';
 import type { LLMProvider } from '../skills/types.js';
 import type { DbHandle } from '../db/index.js';
@@ -26,6 +28,12 @@ export interface AssignArgs {
   llm: LLMProvider;
   registry: CaptureRegistry;
   timeoutFn?: TimeoutFn;
+  /**
+   * Story 16.2 — injectable archival enqueue (tests pass a spy so no Chrome runs).
+   * Called once per moved item ONLY when the target board archives-on-promote. Default:
+   * fire-and-forget the 16.1 snapshot job on the single worker (status-neutral, graceful).
+   */
+  enqueueSnapshot?: (args: { itemId: string; url: string | null }) => void;
 }
 
 export interface AssignResult {
@@ -50,6 +58,7 @@ export async function assignItems(handle: DbHandle, args: AssignArgs): Promise<A
   const skipped: string[] = [];
   const notFound: string[] = [];
   const failed: string[] = [];
+  const sources = new Map<string, string | null>(); // moved id → its source URL (for archival)
 
   // PHASE 1 — all moves first. Fast serial single-FK writes that do NOT interleave
   // with the (slow) earned-enrich jobs, so a batch isn't paced by N LLM round-trips
@@ -71,6 +80,7 @@ export async function assignItems(handle: DbHandle, args: AssignArgs): Promise<A
       // descriptor; `fields`/assets untouched (no itemAssets arg).
       await writeItem(handle, { ...item, boardId: args.boardId, updatedAt: Math.floor(Date.now() / 1000) });
       assigned.push(id);
+      sources.set(id, item.source ?? null);
     } catch {
       failed.push(id);
     }
@@ -93,6 +103,20 @@ export async function assignItems(handle: DbHandle, args: AssignArgs): Promise<A
       timeoutFn: args.timeoutFn,
     }).catch((e) => e),
   );
+
+  // Story 16.2 — opt-in archival: if the TARGET board archives-on-promote, enqueue a
+  // snapshot (16.1) for each MOVED item (never for skipped same-board items). The
+  // snapshot job is fire-and-forget on the same concurrency-1 worker (it serializes
+  // behind the earned-enrich jobs queued above) and degrades gracefully (16.1 AC4) — we
+  // never block the assign response on it. Default-off: unflagged boards enqueue nothing.
+  if (archivesOnPromote(target.descriptor as BoardDescriptor | undefined)) {
+    const enqueueSnapshot =
+      args.enqueueSnapshot ??
+      ((a: { itemId: string; url: string | null }) => {
+        if (a.url) void runSnapshotJob(handle, { itemId: a.itemId, url: a.url });
+      });
+    for (const id of assigned) enqueueSnapshot({ itemId: id, url: sources.get(id) ?? null });
+  }
 
   return { assigned, skipped, notFound, failed, settled: Promise.allSettled(jobs) };
 }

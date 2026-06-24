@@ -222,3 +222,104 @@ describe('Story 14.2 — NO item is ever auto-assigned (AC6, NFR-BC)', () => {
     }
   });
 });
+
+// Story 16.2 — opt-in archival trigger on the ONE assign verb.
+describe('assignItems archival trigger (Story 16.2)', () => {
+  it('enqueues a snapshot when the TARGET board archives-on-promote, preserving the takeaway', async () => {
+    const { boards } = await import('../db/schema.js');
+    const { LIBRARY_DESCRIPTOR } = await import('../db/seed.js');
+    const { dir, handle } = db();
+    try {
+      // flag the Library board archive-on-promote (additive descriptor edit)
+      handle.db.update(boards).set({ descriptor: { ...LIBRARY_DESCRIPTOR, archive_on_promote: true } }).where(eq(boards.id, LIBRARY_BOARD_ID)).run();
+      // an Inbox item with NO takeaway yet — the earned tier writes it on promotion.
+      handle.db.insert(items).values({ id: 'arch1', boardId: INBOX_BOARD_ID, source: 'https://archive.me/x' }).run();
+
+      // Real earned-tier enrichment (spy LLM) writes the takeaway into item.fields; the
+      // snapshot trigger must fire ALONGSIDE it — proving the differentiator across the
+      // actual enrich+trigger seam (not a hand-seeded field under a disabled LLM).
+      const spy = spyProvider({ summary: 'earned takeaway' });
+      const snaps: Array<{ itemId: string; url: string | null }> = [];
+      const res = await assignItems(handle, {
+        itemIds: ['arch1'], boardId: LIBRARY_BOARD_ID, llm: spy.llm, registry: fakeRegistry(),
+        timeoutFn: neverFires, enqueueSnapshot: (a) => snaps.push(a),
+      });
+      await res.settled;
+
+      assert.deepEqual(res.assigned, ['arch1']);
+      assert.equal(snaps.length, 1, 'exactly one snapshot enqueued for the promoted item');
+      assert.deepEqual(snaps[0], { itemId: 'arch1', url: 'https://archive.me/x' });
+      // the enrichment-WRITTEN takeaway coexists with the snapshot trigger (not clobbered)
+      const row = handle.db.select().from(items).where(eq(items.id, 'arch1')).get();
+      assert.equal((row.fields as any).summary, 'earned takeaway', 'the earned takeaway the enricher wrote is intact');
+      assert.equal(row.boardId, LIBRARY_BOARD_ID);
+    } finally {
+      handle.sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT enqueue a snapshot when the target board is not flagged (default off)', async () => {
+    const { dir, handle } = db();
+    try {
+      handle.db.insert(items).values({ id: 'noarch1', boardId: INBOX_BOARD_ID, source: 'https://x' }).run();
+      const snaps: unknown[] = [];
+      const res = await assignItems(handle, {
+        itemIds: ['noarch1'], boardId: LIBRARY_BOARD_ID, llm: disabledLlm, registry: fakeRegistry(),
+        timeoutFn: neverFires, enqueueSnapshot: (a) => snaps.push(a),
+      });
+      await res.settled;
+      assert.deepEqual(res.assigned, ['noarch1']);
+      assert.equal(snaps.length, 0, 'unflagged board → no snapshot (the cheap path is unchanged)');
+    } finally {
+      handle.sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT enqueue snapshots for items already on the flagged board (skipped, no re-archive)', async () => {
+    const { boards } = await import('../db/schema.js');
+    const { LIBRARY_DESCRIPTOR } = await import('../db/seed.js');
+    const { dir, handle } = db();
+    try {
+      handle.db.update(boards).set({ descriptor: { ...LIBRARY_DESCRIPTOR, archive_on_promote: true } }).where(eq(boards.id, LIBRARY_BOARD_ID)).run();
+      handle.db.insert(items).values({ id: 'already', boardId: LIBRARY_BOARD_ID, source: 'https://x' }).run();
+      const snaps: unknown[] = [];
+      const res = await assignItems(handle, {
+        itemIds: ['already'], boardId: LIBRARY_BOARD_ID, llm: disabledLlm, registry: fakeRegistry(),
+        timeoutFn: neverFires, enqueueSnapshot: (a) => snaps.push(a),
+      });
+      await res.settled;
+      assert.deepEqual(res.skipped, ['already']);
+      assert.equal(snaps.length, 0, 'a same-board no-op assign archives nothing');
+    } finally {
+      handle.sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+  it('enqueues a snapshot for each MOVED item in a batch and nothing for skipped ones', async () => {
+    const { boards } = await import('../db/schema.js');
+    const { LIBRARY_DESCRIPTOR } = await import('../db/seed.js');
+    const { dir, handle } = db();
+    try {
+      handle.db.update(boards).set({ descriptor: { ...LIBRARY_DESCRIPTOR, archive_on_promote: true } }).where(eq(boards.id, LIBRARY_BOARD_ID)).run();
+      handle.db.insert(items).values({ id: 'm1', boardId: INBOX_BOARD_ID, source: 'https://a' }).run();
+      handle.db.insert(items).values({ id: 'm2', boardId: INBOX_BOARD_ID, source: 'https://b' }).run();
+      handle.db.insert(items).values({ id: 'already', boardId: LIBRARY_BOARD_ID, source: 'https://c' }).run(); // skipped
+
+      const snaps: Array<{ itemId: string; url: string | null }> = [];
+      const res = await assignItems(handle, {
+        itemIds: ['m1', 'm2', 'already'], boardId: LIBRARY_BOARD_ID, llm: disabledLlm, registry: fakeRegistry(),
+        timeoutFn: neverFires, enqueueSnapshot: (a) => snaps.push(a),
+      });
+      await res.settled;
+      assert.deepEqual(res.assigned.sort(), ['m1', 'm2']);
+      assert.deepEqual(res.skipped, ['already']);
+      assert.deepEqual(snaps.map((s) => s.itemId).sort(), ['m1', 'm2'], 'exactly the moved items archived — not the skipped one');
+    } finally {
+      handle.sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });

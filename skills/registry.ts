@@ -6,6 +6,7 @@ import { uploadAssetSkill } from './upload-asset.js';
 import { refetchSkill } from './refetch.js';
 import { searchSkill } from './search.js';
 import { composeBoardSkill } from './compose-board.js';
+import { composeCollectionSkill } from './compose-collection.js';
 import { generateFieldsSkill } from './generate-fields.js';
 import { exportSkill } from './export.js';
 import type { Skill } from './types.js';
@@ -59,6 +60,7 @@ export function registerAllSkills(registry: SkillRegistry): void {
   registry.register(refetchSkill); // Story 7.3
   registry.register(searchSkill); // Story 9.1
   registry.register(composeBoardSkill); // Story 10.1
+  registry.register(composeCollectionSkill); // Story 15.2
   registry.register(generateFieldsSkill); // Story 10.3
   registry.register(exportSkill); // Story 17.1
 }

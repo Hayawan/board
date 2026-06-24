@@ -1,6 +1,6 @@
 # Story 15.3: Copy-on-write "materialize view to board"
 
-Status: planned
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,22 +34,22 @@ so that divergence is a deliberate choice I made, not a default the system impos
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing materialize tests first (TDD)** (AC: 1, 2, 6)
-  - [ ] In a new `db/materialize.test.ts` (or `skills/materialize-view.test.ts`): seed two boards + items + assets; create a view (15.1) spanning them; materialize; assert a NEW board exists with NEW item rows (different ids), and **every source item is unchanged** (snapshot ids/board_id/fields/notes/favorite before, assert equal after).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Implement copy-on-write materialize** (AC: 1, 2, 3)
-  - [ ] New `db/materialize.ts` (or a `skills/materialize-view.ts` skill — confirm the v1 skill-list policy before surfacing). `materializeView(handle, viewId, {name}) → {boardId, copied}`:
+- [x] **Task 1 — Write the failing materialize tests first (TDD)** (AC: 1, 2, 6)
+  - [x] In a new `db/materialize.test.ts` (or `skills/materialize-view.test.ts`): seed two boards + items + assets; create a view (15.1) spanning them; materialize; assert a NEW board exists with NEW item rows (different ids), and **every source item is unchanged** (snapshot ids/board_id/fields/notes/favorite before, assert equal after).
+  - [x] Run; confirm red.
+- [x] **Task 2 — Implement copy-on-write materialize** (AC: 1, 2, 3)
+  - [x] New `db/materialize.ts` (or a `skills/materialize-view.ts` skill — confirm the v1 skill-list policy before surfacing). `materializeView(handle, viewId, {name}) → {boardId, copied}`:
     - resolve the view's current items via 15.1 `resolveView` (read-only).
     - create the destination board (reuse `insertBoard`, `db/seed.ts:128`; descriptor: a minimal/universal descriptor or a chosen home descriptor — pick one and document it).
     - for each resolved item: write a **new** `item` row (new id, `board_id` = new board, copying `title`/`source`/`fields`/`notes`/`favorite`) via the typed `writeItem` choke-point (`db/queue.ts:160`) so `search_blob`/FTS are built for the copies.
     - **copy is move-free:** never UPDATE a source `item.board_id`; never DELETE a source row.
-  - [ ] Test (AC3): edit a copied item's notes → assert the source item's notes are unchanged.
-- [ ] **Task 3 — Asset copy with hash dedupe** (AC: 4)
-  - [ ] For each copied item's assets: create a **new `asset` row** (new id, `item_id` = the copy) but **reuse the file by `hash`** — if an on-disk file with that `asset.hash` already exists, point the new row's `path` at it rather than re-writing bytes. (`asset.hash` exists at `db/schema.ts:65` and sha256 is computed at `capture/manual-upload.ts:71`; there is **no dedupe helper today** — this story introduces the hash-reuse logic.)
-  - [ ] Pass the new assets to `writeItem`'s `itemAssets` arg so they are written atomically with the copied item (`db/queue.ts:160,191-193`).
-  - [ ] Test: two items sharing an asset hash → assert the file is referenced (not duplicated on disk); deleting the materialized board (via `deleteItemWithAssets`, `db/item-actions.ts:63`) does not unlink a file still referenced by a source item.
-- [ ] **Task 4 — Wire tests + verify green** (AC: 5, 6)
-  - [ ] Add the NFR-BC boot/regression assertion (pre-wave DB served unchanged after materialize; extend `db/seed.test.ts`); append the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
+  - [x] Test (AC3): edit a copied item's notes → assert the source item's notes are unchanged.
+- [x] **Task 3 — Asset copy with hash dedupe** (AC: 4)
+  - [x] For each copied item's assets: create a **new `asset` row** (new id, `item_id` = the copy) but **reuse the file by `hash`** — if an on-disk file with that `asset.hash` already exists, point the new row's `path` at it rather than re-writing bytes. (`asset.hash` exists at `db/schema.ts:65` and sha256 is computed at `capture/manual-upload.ts:71`; there is **no dedupe helper today** — this story introduces the hash-reuse logic.)
+  - [x] Pass the new assets to `writeItem`'s `itemAssets` arg so they are written atomically with the copied item (`db/queue.ts:160,191-193`).
+  - [x] Test: two items sharing an asset hash → assert the file is referenced (not duplicated on disk); deleting the materialized board (via `deleteItemWithAssets`, `db/item-actions.ts:63`) does not unlink a file still referenced by a source item.
+- [x] **Task 4 — Wire tests + verify green** (AC: 5, 6)
+  - [x] Add the NFR-BC boot/regression assertion (pre-wave DB served unchanged after materialize; extend `db/seed.test.ts`); append the test to the `test` script; run `npm test`; confirm green + existing suites unaffected.
 
 ## Dev Notes
 
@@ -94,10 +94,30 @@ so that divergence is a deliberate choice I made, not a default the system impos
 
 ### Agent Model Used
 
+claude-opus-4-8 (1M context)
+
 ### Debug Log References
+
+- Full suite: **492 pass / 0 fail** (+7 materialize tests). Source typechecks clean under `strict`.
+- The shared `deleteItemWithAssets` change (reference-aware unlink) is regression-verified: the full delete/board-cascade/item-actions suites stay green, plus an explicit "unshared file still unlinked" test.
 
 ### Completion Notes List
 
+- **Copy, never move (AC1/AC2, D11/D12).** `materializeView` resolves the view (15.1, read-only) and writes a NEW `item` row per resolved item (new id, dest board, `title/source/fields/notes/favorite` by value) through the `writeItem` choke-point (so search_blob/FTS build for the copy). It NEVER updates a source `item.board_id` or deletes a source row. Tested: source items AND their asset rows are byte-for-byte unchanged; the op is purely additive (asserted exactly +1 board / +N items / +N assets, nothing else mutated).
+- **Asset hash dedupe — referenced, not rewritten (AC4, NFR-1).** Copy asset rows reuse the source `path`+`hash` (the file already exists at that path) — `materializeView` does ZERO file I/O. Tested: the on-disk file set is identical before/after, and `copy.path === source.path`.
+- **Shared-file delete safety (AC4).** A copy and its source now share a file, so `deleteItemWithAssets` became reference-aware: before unlinking, it checks (by BASENAME — the exact key the unlink resolves under the dir, so guard and action can't disagree — review fix per Winston/Amelia) whether any OTHER asset row still resolves to that file; if so it skips the unlink. Tested BOTH directions: deleting the copy keeps the shared file (source still resolves); deleting an item with an UNSHARED file still unlinks it (no orphan-leak regression).
+- **Divergence owned by the copy (AC3).** Copies are independent rows (`fields` re-serialized to JSON per row — no shared object reference). Tested: editing the copy's notes leaves the source untouched. **Limitation (documented):** the destination descriptor is minimal (`fields:[]`) — a deliberate v1 choice (no descriptor merge across heterogeneous sources), so a materialized item's notes/favorite are editable but its descriptor FIELDS are not (an empty `patchItemFields` allowlist). Divergence still holds; field-editability would need a chosen/merged descriptor (deferred).
+- **NFR-BC (AC5).** Additive only — no schema change (reuses existing tables), new board + new item/asset rows, existing data untouched (a boot test is genuinely moot here since the schema is unchanged; source-unchanged + additive-count assertions cover it).
+- **Atomicity (documented).** Not atomic across N items (each `writeItem` is its own transaction); a mid-run crash leaves a partial, deletable board — acceptable for a user-initiated copy.
+- **Review fixes applied (party-mode):** (a) delete-guard key aligned to the unlink key (basename); (b) AC2 strengthened to assert source ASSET rows unchanged + AC5 additive-count snapshot; (c) documented the `fields:[]` field-editability consequence; (d) added unknown-view/empty-view/no-asset edge tests.
+- **Pre-existing note (out of scope):** `deleteItemWithAssets` resolves every asset under `screenshotsDir` by basename — a `snapshots/*` asset (Epic 16) would resolve to the wrong dir. That predates this story (16.x added snapshots without updating the deleter); flagged for a follow-up, not fixed here.
+
 ### File List
 
+- `db/materialize.ts` (new) — `materializeView` (copy-on-write; resolveView → insertBoard → writeItem copies + dedup'd asset rows).
+- `db/materialize.test.ts` (new) — 7 tests: copy-not-move + additive-count + source-asset integrity, hash-dedupe (no new bytes), divergence, delete-safety (both directions), unknown/empty/no-asset edges.
+- `db/item-actions.ts` (modified) — `deleteItemWithAssets` reference-aware unlink (shared-file safety, basename-keyed).
+
 ### Change Log
+
+- 2026-06-23 — Story 15.3 implemented (TDD). Copy-on-write "materialize view to board": copies a lens's items into a new board (new rows; asset files reused by hash, never rewritten), source byte-for-byte untouched. `deleteItemWithAssets` made shared-file-safe. Party-mode review applied (guard-key alignment, additive/asset-row assertions, field-editability doc, edge tests). Epic 15 complete — final story of the batch. Suite 492 pass / 0 fail.

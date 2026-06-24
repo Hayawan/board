@@ -29,7 +29,7 @@ function restoreFile(file: string, snap: string | null): void {
 // we never mutate process.env (the config singleton is frozen at load).
 
 async function seededV1App(
-  opts: { apiToken?: string; corsOrigins?: string[]; logger?: any } = {},
+  opts: { apiToken?: string; corsOrigins?: string[]; logger?: any; enqueueSnapshot?: (a: { itemId: string; url: string | null }) => void } = {},
 ) {
   const { initDb } = await import("../db/index.js");
   const { seed } = await import("../db/seed.js");
@@ -42,6 +42,7 @@ async function seededV1App(
     corsOrigins: opts.corsOrigins,
     logger: opts.logger,
     screenshotsDir: dir, // Story 12.2 delete-asset-file tests resolve files here
+    enqueueSnapshot: opts.enqueueSnapshot, // Story 16.2 — spy so the archive action runs no Chrome
   });
   return { app, handle, dir };
 }
@@ -770,6 +771,68 @@ test("12.2 (NFR-BC): an item from the collections path is visible + mutable via 
     });
     assert.equal(patched.statusCode, 200);
     assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get().notes, "via v1");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 16.2 — per-item "archive this" REST action (POST /api/v1/items/:id/archive).
+test("16.2: POST /items/:id/archive enqueues exactly one snapshot for that item", async () => {
+  const snaps: Array<{ itemId: string; url: string | null }> = [];
+  const { app, handle, dir } = await seededV1App({ enqueueSnapshot: (a) => snaps.push(a) });
+  try {
+    handle.db.insert(items).values({ id: "arch-it", boardId: "library", source: "https://keep.me/x" }).run();
+    const res = await app.inject({ method: "POST", url: "/api/v1/items/arch-it/archive", headers: AUTH });
+    assert.equal(res.statusCode, 202);
+    assert.deepEqual(JSON.parse(res.body), { queued: true });
+    assert.deepEqual(snaps, [{ itemId: "arch-it", url: "https://keep.me/x" }], "exactly one snapshot for that item");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("16.2: POST /items/:id/archive on an unknown item → 404, nothing enqueued", async () => {
+  const snaps: unknown[] = [];
+  const { app, handle, dir } = await seededV1App({ enqueueSnapshot: (a) => snaps.push(a) });
+  try {
+    const res = await app.inject({ method: "POST", url: "/api/v1/items/ghost/archive", headers: AUTH });
+    assert.equal(res.statusCode, 404);
+    assert.equal(snaps.length, 0);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AC1 default-off — capturing to the Inbox enqueues NO snapshot (the cheap path is
+// unchanged); the Inbox board is not flagged archive_on_promote.
+test("16.2 (default-off): POST /items to the Inbox enqueues no snapshot", async () => {
+  const snaps: unknown[] = [];
+  const { app, handle, dir } = await seededV1App({ enqueueSnapshot: (a) => snaps.push(a) });
+  try {
+    const res = await app.inject({
+      method: "POST", url: "/api/v1/items", headers: AUTH,
+      body: JSON.stringify({ url: "https://capture.example" }), // no board → Inbox, cheap
+    });
+    assert.equal(res.statusCode, 201);
+    assert.equal(snaps.length, 0, "capture to a non-archival board snapshots nothing");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("16.2: POST /items/:id/archive on an item with no source URL → 422", async () => {
+  const snaps: unknown[] = [];
+  const { app, handle, dir } = await seededV1App({ enqueueSnapshot: (a) => snaps.push(a) });
+  try {
+    // a manual-upload item legitimately has no source URL to snapshot
+    handle.db.insert(items).values({ id: "nosrc", boardId: "library", source: null as any }).run();
+    const res = await app.inject({ method: "POST", url: "/api/v1/items/nosrc/archive", headers: AUTH });
+    assert.equal(res.statusCode, 422);
+    assert.equal(snaps.length, 0, "nothing enqueued for a sourceless item");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

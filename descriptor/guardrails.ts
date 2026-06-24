@@ -100,26 +100,57 @@ export interface RepairOutcome {
   errors?: ProposalError[];
 }
 
+/** Generic outcome of {@link boundedRepair}: the validated `value` on ok, else `draft`. */
+export interface BoundedRepairResult<T, V, E = ProposalError> {
+  ok: boolean;
+  /** The validator's canonical value on success. */
+  value?: V;
+  /** The last (still-invalid) proposal, surfaced as an editable draft. */
+  draft?: T;
+  errors?: E[];
+}
+
 /**
- * Bounded validate-and-repair (shared by compose-board 10.1 + generate-fields 10.3).
- * `propose(errors?)` produces a `{ name, descriptor }` proposal — called with no args
- * first, then ONCE MORE with the validation errors if the first fails. Exactly ONE
- * repair (not a loop). On terminal failure → an editable draft; NOTHING is written
- * here (callers persist only on ok). NEVER persists.
+ * Generic bounded validate-and-repair (Story 15.2 — extracted from validateAndRepair so
+ * the composer can reuse the SAME ≤1-repair discipline for a non-descriptor proposal).
+ * `propose(errors?)` is called once, then ONCE MORE with the validation errors if the
+ * first fails (exactly one repair, not a loop). `validate` returns `{ok, value?, errors?}`.
+ * The error type `E` is generic (the composer carries its own codes, not the descriptor
+ * `ProposalError` union). On terminal failure → the last proposal as an editable draft.
+ * NEVER persists.
+ */
+export async function boundedRepair<T, V = T, E = ProposalError>(
+  propose: (errors?: E[]) => Promise<T>,
+  validate: (candidate: T) => { ok: boolean; value?: V; errors?: E[] },
+): Promise<BoundedRepairResult<T, V, E>> {
+  const first = await propose();
+  let result = validate(first);
+  if (result.ok) return { ok: true, value: result.value };
+
+  const repaired = await propose(result.errors);
+  result = validate(repaired);
+  if (result.ok) return { ok: true, value: result.value };
+
+  return { ok: false, draft: repaired, errors: result.errors };
+}
+
+/**
+ * Bounded validate-and-repair for board DESCRIPTORS (shared by compose-board 10.1 +
+ * generate-fields 10.3). A thin wrapper over {@link boundedRepair} whose validator is
+ * `validateDescriptorProposal`. Exactly ONE repair; editable draft on terminal failure;
+ * NEVER persists. Behavior/return shape preserved verbatim for its existing callers.
  */
 export async function validateAndRepair(
   propose: (errors?: ProposalError[]) => Promise<{ name: string; descriptor: unknown }>,
   opts: { existingKeys?: string[] } = {},
 ): Promise<RepairOutcome> {
-  const first = await propose();
-  let result = validateDescriptorProposal(first.descriptor, opts);
-  if (result.ok) return { ok: true, name: first.name, descriptor: result.descriptor };
-
-  // ONE repair re-ask, feeding the structured errors back.
-  const repaired = await propose(result.errors);
-  result = validateDescriptorProposal(repaired.descriptor, opts);
-  if (result.ok) return { ok: true, name: repaired.name, descriptor: result.descriptor };
-
-  // Still invalid → editable draft, never written, never silently dropped.
-  return { ok: false, draft: repaired, errors: result.errors };
+  const r = await boundedRepair<{ name: string; descriptor: unknown }, { name: string; descriptor: BoardDescriptor }>(
+    propose,
+    (cand) => {
+      const res = validateDescriptorProposal(cand.descriptor, opts);
+      return res.ok ? { ok: true, value: { name: cand.name, descriptor: res.descriptor! } } : { ok: false, errors: res.errors };
+    },
+  );
+  if (r.ok) return { ok: true, name: r.value!.name, descriptor: r.value!.descriptor };
+  return { ok: false, draft: r.draft, errors: r.errors };
 }

@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { existsSync, unlinkSync } from 'node:fs';
 
 import { eq } from 'drizzle-orm';
@@ -57,7 +57,8 @@ export async function patchItemFields(
 /**
  * Delete an item, its asset rows (via deleteItem), AND its asset FILES on disk —
  * board-agnostic (any item may have an uploaded asset, Story 6.4), unlike the
- * prototype's grid-only cleanup. Resolves files under `screenshotsDir` by basename
+ * prototype's grid-only cleanup. Routes each asset to its own dir by the stored path
+ * prefix (screenshots/ vs the snapshots/ sibling), so both kinds clean up correctly
  * (Story 2.2 relative-path contract). Returns the number of asset files unlinked.
  */
 export async function deleteItemWithAssets(
@@ -71,10 +72,27 @@ export async function deleteItemWithAssets(
   const assetRows = handle.db.select().from(assets).where(eq(assets.itemId, itemId)).all();
   await deleteItem(handle, itemId); // removes asset rows + item + fts atomically
 
+  // Route each asset to ITS OWN dir by the stored path prefix, then resolve by basename.
+  // Epic-16 snapshot assets ("snapshots/<id>.html") live in the snapshots/ sibling of
+  // screenshotsDir — the old basename-under-screenshotsDir unlink orphaned them. Snapshots
+  // dir is the sibling of screenshotsDir (both are `<dataDir>/{screenshots,snapshots}`).
+  const snapshotsDir = join(dirname(screenshotsDir), 'snapshots');
   let filesRemoved = 0;
   for (const a of assetRows) {
     if (!a.path) continue;
-    const abs = join(screenshotsDir, basename(a.path));
+    // Shared-file safety (Story 15.3): a materialized copy's asset row references the SAME
+    // file (identical relative `path`) as its source. `deleteItem` already removed THIS
+    // item's asset rows, so if any OTHER asset row still has this exact path, the file is
+    // shared — do NOT unlink it. The full relative path is 1:1 with the resolved file
+    // (prefix → dir, basename → name), so guard and unlink can never disagree.
+    const stillReferenced = handle.db
+      .select({ path: assets.path })
+      .from(assets)
+      .all()
+      .some((r) => r.path === a.path);
+    if (stillReferenced) continue;
+    const baseDir = a.path.startsWith('snapshots/') ? snapshotsDir : screenshotsDir;
+    const abs = join(baseDir, basename(a.path));
     if (existsSync(abs)) {
       unlinkSync(abs);
       filesRemoved += 1;

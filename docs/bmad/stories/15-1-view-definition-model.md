@@ -1,6 +1,6 @@
 # Story 15.1: View-definition model (saved cross-board lens)
 
-Status: planned
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,24 +38,24 @@ so that a "composed board" is a lens over canonical items, not a duplicate pile.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Write the failing schema/boot tests first (TDD)** (AC: 1, 7)
-  - [ ] In `db/schema.test.ts`: assert a `view` row round-trips `{id, name, filter, order, captions}` with the JSON columns as structured objects (mirror the existing `board → item → asset` round-trip at `db/schema.test.ts:122`).
-  - [ ] Add the NFR-BC boot/regression assertion: open a DB seeded with the existing boards/items, add the `view` table, re-open, and assert existing boards/items/assets are served unchanged and **no `item` row was touched** (extend the seed idempotency pattern in `db/seed.test.ts`).
-  - [ ] Run; confirm red.
-- [ ] **Task 2 — Add the additive `view` table (drizzle + raw bootstrap, in lockstep)** (AC: 1, 7)
-  - [ ] Add `views` to `db/schema.ts` (`text id` PK, `text name`, `text('filter', {mode:'json'})`, nullable `text('order', {mode:'json'})`, nullable `text('captions', {mode:'json'})`, `created_at`/`updated_at` like `board`). Do **not** add any column to `items`/`boards`.
-  - [ ] Mirror it as `CREATE TABLE IF NOT EXISTS view (...)` in `BOOTSTRAP_SQL` (`db/index.ts:22`) — both must match, the way `board`/`item`/`asset` already do (`db/index.ts:13-17` explains why both exist; `schema.test.ts` guards drift).
-  - [ ] Add the `View`/`NewView` `$inferSelect`/`$inferInsert` types.
-- [ ] **Task 3 — Implement read-only view resolution** (AC: 2, 3, 4, 6)
-  - [ ] New `db/view.ts` (pure read module, alongside `db/search.ts`). `resolveView(handle, viewRow): Item[]`:
+- [x] **Task 1 — Write the failing schema/boot tests first (TDD)** (AC: 1, 7)
+  - [x] In `db/schema.test.ts`: assert a `view` row round-trips `{id, name, filter, order, captions}` with the JSON columns as structured objects (mirror the existing `board → item → asset` round-trip at `db/schema.test.ts:122`).
+  - [x] Add the NFR-BC boot/regression assertion: open a DB seeded with the existing boards/items, add the `view` table, re-open, and assert existing boards/items/assets are served unchanged and **no `item` row was touched** (extend the seed idempotency pattern in `db/seed.test.ts`).
+  - [x] Run; confirm red.
+- [x] **Task 2 — Add the additive `view` table (drizzle + raw bootstrap, in lockstep)** (AC: 1, 7)
+  - [x] Add `views` to `db/schema.ts` (`text id` PK, `text name`, `text('filter', {mode:'json'})`, nullable `text('order', {mode:'json'})`, nullable `text('captions', {mode:'json'})`, `created_at`/`updated_at` like `board`). Do **not** add any column to `items`/`boards`.
+  - [x] Mirror it as `CREATE TABLE IF NOT EXISTS view (...)` in `BOOTSTRAP_SQL` (`db/index.ts:22`) — both must match, the way `board`/`item`/`asset` already do (`db/index.ts:13-17` explains why both exist; `schema.test.ts` guards drift).
+  - [x] Add the `View`/`NewView` `$inferSelect`/`$inferInsert` types.
+- [x] **Task 3 — Implement read-only view resolution** (AC: 2, 3, 4, 6)
+  - [x] New `db/view.ts` (pure read module, alongside `db/search.ts`). `resolveView(handle, viewRow): Item[]`:
     - filter → SELECT (generalize the FTS5 `MATCH` path from `db/search.ts` to drop/relax `i.board_id = ?` and add structured predicates: `boardIds?`, `status?`, `favorite?`, tag/field match); hydrate through Drizzle so `fields` is parsed JSON (same as `searchItems`).
     - apply the `order` overlay: pinned ids first (in order, skipping missing/non-matching), then the rest.
     - perform **only** SELECTs — no INSERT/UPDATE/DELETE anywhere in this module.
-  - [ ] Test (AC4): snapshot every source row's `updatedAt`/`board_id` before resolve, assert unchanged after; assert editing a source item's field changes what the view returns (AC6, single source of truth).
-- [ ] **Task 4 — Cross-board rendering (universal fields, graceful degrade)** (AC: 5)
-  - [ ] Reuse `renderFields`/`renderAsset` (`descriptor/render-map.js`) per item against its **home board's** descriptor; verify a view spanning two descriptors renders universal fields and omits absent per-board columns (the renderer already skips empty values — assert it).
-- [ ] **Task 5 — Wire tests + verify green** (AC: 7)
-  - [ ] Append the new test file(s) to the `test` script; run `npm test`; confirm green + existing suites (schema, seed, search) unaffected.
+  - [x] Test (AC4): snapshot every source row's `updatedAt`/`board_id` before resolve, assert unchanged after; assert editing a source item's field changes what the view returns (AC6, single source of truth).
+- [x] **Task 4 — Cross-board rendering (universal fields, graceful degrade)** (AC: 5)
+  - [x] Reuse `renderFields`/`renderAsset` (`descriptor/render-map.js`) per item against its **home board's** descriptor; verify a view spanning two descriptors renders universal fields and omits absent per-board columns (the renderer already skips empty values — assert it).
+- [x] **Task 5 — Wire tests + verify green** (AC: 7)
+  - [x] Append the new test file(s) to the `test` script; run `npm test`; confirm green + existing suites (schema, seed, search) unaffected.
 
 ## Dev Notes
 
@@ -100,10 +100,35 @@ so that a "composed board" is a lens over canonical items, not a duplicate pile.
 
 ### Agent Model Used
 
+claude-opus-4-8 (1M context)
+
 ### Debug Log References
+
+- Workshop hinge #1 CONFIRMED by the maintainer (2026-06-23): a composed view = filter-defined lens + optional pin/order overlay stored in the `view` row — not a join table, not m2m. Epic 15 unblocked on this decision.
+- Full suite: **475 pass / 0 fail** (+10 over 16.3: 3 schema/boot, 7 resolveView incl. the review-added cross-descriptor span + whitespace-routing tests).
 
 ### Completion Notes List
 
+- **Additive `view` table, NOT a join (AC1/D12).** A view is a row of JSON — `filter` (live query) + optional `order` (pinned-id overlay) + optional `captions`. `item`/`board` schemas are byte-for-byte unchanged: no new column, no `item→view` FK, no m2m. Items keep one canonical home board. Drizzle table (`db/schema.ts`) + raw `BOOTSTRAP_SQL` (`db/index.ts`) are in lockstep; the round-trip test inserts via Drizzle into the raw-DDL table, so any column/nullability drift throws.
+- **`view`/`order` are SQL keywords — quoted in the raw DDL.** Verified by the boot test opening a FRESH DB through the real `initDb` bootstrap (a quoting error would throw at boot/insert).
+- **Two-path resolution (AC2).** `filter.query` present → FTS5 `MATCH` (board scope RELAXED vs `searchItems`) + structured predicates `AND`-ed on `item`, ordered by FTS rank. Blank/whitespace/missing query → plain `SELECT` with predicates, `ORDER BY created_at DESC, id` (deterministic). The blank case MUST skip FTS (`MATCH '""'` matches nothing) — a review-added whitespace-query test locks this. Predicates: `query`, `boardIds`, `status`, `favorite`; all values bound as `?` params (the `IN (?,?,…)` is built from array length only). Tags ride the FTS query (already in `search_blob`); a richer JSON field-query engine is intentionally deferred.
+- **Dynamic membership, not a frozen list (AC2).** Proven discriminating: resolve N → insert a newly-matching item (view row untouched) → re-resolve N+1.
+- **Order overlay (AC3).** Pinned-AND-matching ids first (in pin order), rest follow; a pinned id that no longer matches/exists is skipped (no error). Proven by pinning an id that is NOT naturally first (asserted to land first), plus a ghost-pin skip.
+- **Strictly read-only + canonical meaning (AC4/AC6).** `resolveView` is SELECT-only. Test snapshots a source row and asserts byte-identity after resolve, then edits the item's field and asserts the view reflects it (a view holds no copy).
+- **Cross-board rendering (AC5).** Reuses the existing `renderFields` per item against its HOME board's descriptor. **Review fix (Quinn):** the test now spans BOTH seeded descriptors (Library `summary` vs Inspiration `meta.*`), rendering each item against its home descriptor and asserting a foreign-descriptor render omits the absent column (graceful degrade) — not the original single-board synthetic-descriptor check.
+- **Review fixes applied (party-mode):** genuine two-descriptor AC5 span; whitespace-query routing test; `toFtsPhrase` exported from `search.ts` and imported (no duplicate, avoids FTS-escaping drift); a one-line note on the deliberate no-LIMIT (a lens returns its whole membership).
+- **Scope honesty:** `captions` is stored but not yet read by `resolveView` (forward-looking for the rendering UI; 15.2 writes it, later UI reads it). Mounting views into the SPA is staged DOM for a later Epic 15 story — 15.1 delivers the read-model + resolver.
+
 ### File List
 
+- `db/schema.ts` (modified) — additive `views` table + `View`/`NewView` types.
+- `db/index.ts` (modified) — `CREATE TABLE IF NOT EXISTS "view"` in BOOTSTRAP_SQL (quoted keywords).
+- `db/view.ts` (new) — `resolveView` (two-path, read-only, overlay) + `ViewFilter`/`ViewLike`.
+- `db/search.ts` (modified) — export `toFtsPhrase` (shared with the resolver).
+- `db/schema.test.ts` (modified) — view round-trip + null-overlay + NFR-BC boot tests.
+- `db/view.test.ts` (new) — 7 resolveView tests (dynamic, FTS cross-board, overlay, read-only/canonical, predicates, two-descriptor render, whitespace routing).
+- `package.json` (modified) — `db/view.test.ts` added to the `test` script.
+
 ### Change Log
+
+- 2026-06-23 — Story 15.1 implemented (TDD), after maintainer confirmation of the view-def hinge. Additive `view` table (saved cross-board lens) + read-only `resolveView` (dynamic filter + pin/order overlay), reusing the FTS path generalized across boards. NFR-BC: additive, no item migration, item/board schemas unchanged. Party-mode review applied (two-descriptor span, whitespace routing, DRY FTS helper). Epic 15 Story 1 of 3. Suite 475 pass / 0 fail.

@@ -1,6 +1,6 @@
 # Story 13.4: Browser extension — recent-additions review lane (fast-follow)
 
-Status: planned
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -31,18 +31,18 @@ so that I can triage the firehose without opening the app.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Confirm dependencies are landed (gate)** (AC: 1, 2)
-  - [ ] Verify Epic 12 (12.1 auth + 12.2 CRUD/list) and Epic 14 (14.2 assign endpoint + 14.3 suggestion chip) are implemented before starting — this story is a client of all four. If any is missing, hold (Status stays `planned`).
-- [ ] **Task 2 — Write the failing API-client contract tests first (TDD)** (AC: 1, 2, 5)
-  - [ ] Add tests for a pure extension API-client module: `save(currentTab)` → POSTs authed `/api/v1/items` (no board); `listRecent(n)` → GETs `/api/v1/items?limit=n` newest-first; `assign(itemId, boardId)` → POSTs `/api/v1/items/assign`. Assert each call's URL, `Bearer` header, and body. Assert the manual-fallback path when no suggestion is present.
-  - [ ] Run; confirm red.
-- [ ] **Task 3 — Implement the extension API client** (AC: 1, 2)
-  - [ ] Implement the pure client module (no DOM) that the popover UI uses: save / listRecent / assign, all token-authed against the configured instance URL. Reuse the same `/api/v1/*` contracts — no bespoke endpoints.
-- [ ] **Task 4 — Build the popover review-lane UI** (AC: 2, 3)
-  - [ ] The popover lists recent Inbox captures with metadata + the suggested-board chip (14.3); tapping a chip calls `assign` (14.2). Manual board picker when no suggestion. The compose-review framing is the differentiator (AC 3) — not just a save button.
-  - [ ] Package the extension manifest (MV3) + instance-URL/token settings (treat the token like a password).
-- [ ] **Task 5 — Wire tests + verify green; confirm no server changes** (AC: 4, 5)
-  - [ ] Add the client tests to the `test` script; run; confirm green. Confirm the extension adds **no** server-side routes (it consumes Epics 12 + 14 only) and that no existing behavior changed.
+- [x] **Task 1 — Confirm dependencies are landed (gate)** (AC: 1, 2)
+  - [x] Verify Epic 12 (12.1 auth + 12.2 CRUD/list) and Epic 14 (14.2 assign endpoint + 14.3 suggestion chip) are implemented before starting — this story is a client of all four. **All landed** (merged to `main`): `/api/v1/items` (GET/POST), `/api/v1/items/assign`, `/api/v1/items/:id/suggestion`, `/api/v1/boards`. Gate passes.
+- [x] **Task 2 — Write the failing API-client contract tests first (TDD)** (AC: 1, 2, 5)
+  - [x] Added tests for the pure client: `save(currentTab)` → POST authed `/api/v1/items` (no board); `listRecent(n, since)` → GET `/api/v1/items?board=inbox&limit&since`; `assign(itemId, boardId)` → POST `/api/v1/items/assign`. Assert each call's URL, `Bearer` header, body. Manual-fallback via `reviewAction`. Plus `getSuggestion`/`listBoards` contract tests and an **inject-backed round-trip** against a real `buildServer`.
+  - [x] Ran save() test; confirmed red (module missing).
+- [x] **Task 3 — Implement the extension API client** (AC: 1, 2)
+  - [x] `extension/api-client.js` — pure ESM (no DOM, no `chrome.*`), token-authed against the configured instance. Reuses the `/api/v1/*` contracts only — no bespoke endpoints.
+- [x] **Task 4 — Build the popover review-lane UI** (AC: 2, 3)
+  - [x] `popup.html`/`popup.js`: lists recent Inbox captures + per-item suggested-board chip (one-tap confirm → `assign`); manual board picker when there's no suggestion *or* the suggestion call fails (always promotable). Compose-review framing is the differentiator, not a bare save button.
+  - [x] MV3 `manifest.json` + `options.html`/`options.js` for instance-URL/token settings (stored in `chrome.storage.local`, `type=password`, sent only as a Bearer header; remote instance must be https).
+- [x] **Task 5 — Wire tests + verify green; confirm no server changes** (AC: 4, 5)
+  - [x] Added `extension/api-client.test.ts` to the `test` script; suite green (438 pass / 0 fail). The diff touches only `extension/*` + the `package.json` test-script line — **no** server route/schema change; assign moves an item only on explicit chip/picker confirm.
 
 ## Dev Notes
 
@@ -84,10 +84,34 @@ so that I can triage the firehose without opening the app.
 
 ### Agent Model Used
 
+claude-opus-4-8 (1M context)
+
 ### Debug Log References
+
+- Full suite: **438 pass / 0 fail** (+7 tests for 13.4 over the 13.3 state).
+- The inject-backed round-trip caught a real contract mismatch during dev: the live `/api/v1/items/assign` returns `{ assigned: [<id>], ... }` (an array of moved ids), not a count — a self-authored mock would never have caught it. Fixed the assertion to the live shape.
 
 ### Completion Notes List
 
+- **Pure client, one contract, no second backend.** `extension/api-client.js` is plain ESM (no DOM, no `chrome.*` — the `collections-ui.js` precedent), so it's unit-testable. It speaks ONLY the Epic 12 + 14 routes: `save`→POST `/api/v1/items` (no board → Inbox), `listRecent`→GET `/api/v1/items?board=inbox&limit&since`, `getSuggestion`→GET `/api/v1/items/:id/suggestion`, `listBoards`→GET `/api/v1/boards`, `assign`→POST `/api/v1/items/assign` `{itemIds:[id], boardId}`. No server-side files added.
+- **Two-layer test design (the 13.3 anti-confound lesson).** Fake-fetch tests pin URL/Bearer/body cheaply; an **inject-backed round-trip** routes the client's `fetch` into a real `buildServer` and asserts `save→Inbox` and `assign→board_id actually moves` against the LIVE contract. The mocks are only trustworthy because the round-trip proves the contract.
+- **"newest-first" is honest passthrough.** The client never reorders; the list test asserts only that it returns the server's order unchanged. Real newest-first ordering is the server's job, proven in `api/v1.test.ts` — not re-claimed here.
+- **Compose-review is the differentiator (AC3).** The popup shows each Inbox item's AI suggested-board chip with one-tap confirm (→ `assign`), degrading to a dignified manual picker when there's no suggestion. That triage lane — not a bare save button — is the point (vs. a linkding clone).
+- **No auto-move (NFR-BC).** `assign` is called only on an explicit chip click or picker change; saving never moves anything. The round-trip asserts `board_id==='inbox'` *before* the assign call as a data point.
+- **Token handling ("treat like a password").** Stored in `chrome.storage.local` (per-browser, never synced), `type=password` field, sent ONLY as an `Authorization: Bearer` header — never in a URL/query string, never logged. **Review fix (Winston):** a remote (non-localhost) instance must be `https` — `options.js` rejects cleartext `http` to a non-local host so the token can't leak on the wire.
+- **MV3 host permissions.** Static `host_permissions` cover localhost/127.0.0.1 (dev); `optional_host_permissions: ["*://*/*"]` + a runtime request scoped to the *exact* configured origin is the idiomatic least-grant pattern (the user grants only their instance).
+- **Review fixes applied (party-mode):** (a) https-only for remote instances (cleartext-token vector); (b) the per-item suggestion `.catch` now renders the manual picker too, so an item is always promotable even if the suggestion endpoint errors; (c) added `getSuggestion`/`listBoards` contract tests (were untested testable code). Confirmed non-issues: no DOM-injection (all item data via `textContent`/`createElement`/`value`; the one `innerHTML` is a static literal), `reviewAction` handles all degraded inputs, deleted/Inbox suggested board falls back to manual.
+- **Scope honesty (AC2/AC3/AC5):** a full browser-extension E2E is out of v1 scope (per the story). The tested core is the pure client. The popup *wiring* (getSuggestion→reviewAction→assign(chosenBoardId) on click) is shell code verified by inspection, not an automated test; the round-trip proves the assign *verb* (with the contract), not the click handler. `package.json`'s only change is adding the test file to the `test` script — not a server change.
+
 ### File List
 
+- `extension/api-client.js` (new) — pure ESM API client + `reviewAction` decision helper.
+- `extension/api-client.test.ts` (new) — 7 tests: save/listRecent/assign/getSuggestion/listBoards contracts, `reviewAction`, inject-backed round-trip.
+- `extension/manifest.json` (new) — MV3 (activeTab + storage; localhost host perms; optional `*://*/*`).
+- `extension/popup.html`, `extension/popup.js` (new) — the review-lane popup (chip / manual picker / save tab).
+- `extension/options.html`, `extension/options.js` (new) — instance-URL + token settings (https-for-remote enforced; host-permission request).
+- `package.json` (modified) — added `extension/api-client.test.ts` to the `test` script (test wiring only; no server change).
+
 ### Change Log
+
+- 2026-06-23 — Story 13.4 implemented (TDD). A pure, token-authed browser-extension API client + an MV3 review-lane popup that triages the Inbox via the AI suggested-board chip (one-tap confirm → the single assign verb) with a manual-picker fallback. Pure client of Epics 12 + 14 — no server changes. Party-mode review applied (https-only remote, always-promotable fallback, suggestion/boards tests). Suite 438 pass / 0 fail.

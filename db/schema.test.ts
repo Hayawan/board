@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 
 import { initDb } from './index.js';
-import { boards, items, assets } from './schema.js';
+import { boards, items, assets, views } from './schema.js';
 
 // Story 1.1 — schema + connection + WAL. These tests open a throwaway temp DB
 // under os.tmpdir() and NEVER touch the real DATA_DIR / prototype data files.
@@ -147,3 +147,65 @@ describe('db/schema (Story 1.1)', () => {
 function eqId(col: any, val: string) {
   return eq(col, val);
 }
+
+// Story 15.1 — the additive `view` table (saved cross-board lens): a ROW of JSON
+// (filter + optional order overlay + optional captions), NOT a join table.
+describe('view table (Story 15.1)', () => {
+  it('round-trips {id,name,filter,order,captions} with JSON columns as objects', () => {
+    // Fresh DB through the REAL bootstrap — surfaces any `"view"`/`"order"` raw-DDL
+    // quoting error at boot (both are SQL keywords).
+    const d = mkdtempSync(join(tmpdir(), 'board-oss-view-'));
+    const h = initDb(join(d, 'v.db'));
+    try {
+      h.db.insert(views).values({
+        id: 'v1',
+        name: 'RAG across boards',
+        filter: { query: 'retrieval', boardIds: ['library', 'inspiration'], favorite: true },
+        order: ['pin-a', 'pin-b'],
+        captions: { 'pin-a': 'the seminal one' },
+      }).run();
+      const row = h.db.select().from(views).where(eq(views.id, 'v1')).get()!;
+      assert.equal(row.name, 'RAG across boards');
+      assert.deepEqual(row.filter, { query: 'retrieval', boardIds: ['library', 'inspiration'], favorite: true });
+      assert.deepEqual(row.order, ['pin-a', 'pin-b']);
+      assert.deepEqual(row.captions, { 'pin-a': 'the seminal one' });
+    } finally {
+      h.sqlite.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('allows null order/captions (a pure filter lens)', () => {
+    const d = mkdtempSync(join(tmpdir(), 'board-oss-view-'));
+    const h = initDb(join(d, 'v.db'));
+    try {
+      h.db.insert(views).values({ id: 'v2', name: 'All favorites', filter: { favorite: true } }).run();
+      const row = h.db.select().from(views).where(eq(views.id, 'v2')).get()!;
+      assert.deepEqual(row.filter, { favorite: true });
+      assert.equal(row.order, null);
+      assert.equal(row.captions, null);
+    } finally {
+      h.sqlite.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('NFR-BC: adding the view table leaves existing boards/items served unchanged', () => {
+    const d = mkdtempSync(join(tmpdir(), 'board-oss-view-'));
+    const h = initDb(join(d, 'v.db'));
+    try {
+      // a pre-existing board + item, as a pre-wave DB would have
+      h.db.insert(boards).values({ id: 'b', name: 'B', view: 'grid', descriptor: { fields: [], enrichment_prompt: '', view: 'grid', ingest_mode: 'url-screenshot' } }).run();
+      h.db.insert(items).values({ id: 'it', boardId: 'b', source: 'https://x', title: 'T', fields: { summary: 'S' } }).run();
+      const before = h.db.select().from(items).where(eq(items.id, 'it')).get()!;
+      // re-open (idempotent bootstrap) — the view table already exists, item untouched
+      h.sqlite.close();
+      const h2 = initDb(join(d, 'v.db'));
+      const after = h2.db.select().from(items).where(eq(items.id, 'it')).get()!;
+      assert.deepEqual(after, before, 'existing item byte-for-byte unchanged after the view table ships');
+      h2.sqlite.close();
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});

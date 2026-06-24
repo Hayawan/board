@@ -541,3 +541,235 @@ test("POST /api/boards/:id/reenrich queues all items; 404 for unknown board", as
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Story 13.3: PWA + Web Share Target (mobile capture) ---
+
+// Task 1 (AC 1, 2, 5) — the served manifest is a valid PWA manifest declaring a
+// share_target whose action is the in-app handler and whose params map the shared URL.
+test("13.3: GET /manifest.webmanifest is a valid PWA manifest with a share_target", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "GET", url: "/manifest.webmanifest" });
+    assert.equal(res.statusCode, 200);
+    const m = JSON.parse(res.body);
+    // AC1 — installable: required manifest keys + at least one icon.
+    assert.ok(m.name, "manifest has a name");
+    assert.ok(Array.isArray(m.icons) && m.icons.length > 0, "manifest declares icons");
+    assert.ok(m.start_url, "manifest has start_url");
+    assert.ok(m.display, "manifest has display");
+    // AC2 — share target: declares method/enctype, an in-app action, and params
+    // mapping the shared url (plus text/title) so a shared URL reaches the handler.
+    assert.ok(m.share_target, "manifest declares a share_target");
+    assert.equal(m.share_target.action, "/share", "share_target posts to the in-app handler");
+    assert.match(String(m.share_target.method), /post/i, "share_target uses POST (mutation)");
+    // The declared enctype MUST match what the handler parses (urlencoded) — the one
+    // integration seam a server-side test can't otherwise catch (a multipart decl would
+    // break a real OS share while every server test still passed).
+    assert.match(String(m.share_target.enctype), /x-www-form-urlencoded/i,
+      "enctype matches the urlencoded parser the /share handler registers");
+    assert.equal(m.share_target.params.url, "url", "params map the shared url");
+    assert.ok(m.share_target.params.text, "params map text (Android often carries the URL here)");
+    assert.ok(m.share_target.params.title, "params map title");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 2/3 (AC 1, 2) — the served app shell links the manifest and registers the
+// service worker, so a supported browser can install the PWA.
+test("13.3: served index.html links the manifest and registers the service worker", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "GET", url: "/" });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /<link[^>]+rel=["']manifest["'][^>]+href=["']\/manifest\.webmanifest["']/i,
+      "head links the web manifest");
+    assert.match(res.body, /navigator\.serviceWorker\s*\.\s*register\(\s*["']\/sw\.js["']/,
+      "registers the /sw.js service worker");
+    assert.match(res.body, /<meta[^>]+name=["']theme-color["']/i, "declares a theme-color");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 3 (AC 1, 4) — the service worker is served and is scoped so it passes through
+// /api, /events (SSE), /screenshots, and /share. A SW that buffered text/event-stream
+// would break the Story 5.3 live-fill (sse.ts) — so its pass-through is asserted here.
+test("13.3: GET /sw.js serves a worker that passes through API/SSE/screenshots/share", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const res = await app.inject({ method: "GET", url: "/sw.js" });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.headers["content-type"] ?? "", /javascript/i, "served as JavaScript");
+    // The worker must not intercept these paths (it returns before respondWith).
+    for (const p of ["/api/", "/events", "/screenshots/", "/share"]) {
+      assert.ok(res.body.includes(p), `sw.js declares a pass-through for ${p}`);
+    }
+    assert.match(res.body, /addEventListener\(\s*["']fetch["']/, "registers a fetch handler");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 4 (AC 3, 5) — a shared payload POSTed (form-encoded, as the share_target sends)
+// to /share creates a PENDING item in the INBOX via the same create path as the authed
+// API (addItemSkill → no board → Inbox + cheap tier), and returns the user (no trap).
+// NOTE: cheapness is structural (it routes through addItemSkill with no target board);
+// a spy-LLM "complete === 0" assertion is deliberately omitted — no capture adapter is
+// registered in this harness, so it would be a confounded trivial zero (see v1.test.ts).
+test("13.3: POST /share creates a pending Inbox item and returns the user", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  const { eq } = await import("drizzle-orm");
+  const { items } = await import("./db/schema.js");
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/share",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "url=https%3A%2F%2Fshared.example%2Fpost&title=Shared+Title",
+    });
+    assert.equal(res.statusCode, 200);
+    // Returns the user: the confirmation page navigates back rather than trapping them.
+    assert.match(res.body, /history\.back|location\.replace|location\.href/i,
+      "the share page returns the user to where they were");
+    const row = handle.db.select().from(items).where(eq(items.source, "https://shared.example/post")).get();
+    assert.ok(row, "the shared URL was captured as an item");
+    assert.equal(row.boardId, "inbox", "lands in the Inbox (no target board)");
+    assert.equal(row.status, "pending", "optimistic pending (async capture on the queue)");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 4/5 (AC 3) — Android often shares the URL inside `text` (no `url` field), some-
+// times with surrounding prose. The handler extracts the first URL from `text`.
+test("13.3: POST /share extracts the URL from the shared text when no url field is sent", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  const { eq } = await import("drizzle-orm");
+  const { items } = await import("./db/schema.js");
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/share",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "title=Cool&text=" + encodeURIComponent("Check this out https://from-text.example/x neat"),
+    });
+    assert.equal(res.statusCode, 200);
+    const row = handle.db.select().from(items).where(eq(items.source, "https://from-text.example/x")).get();
+    assert.ok(row, "the URL embedded in text was captured");
+    assert.equal(row.boardId, "inbox");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 4/5 (AC 3) — a share with no resolvable URL returns the user, does not 500,
+// and creates nothing.
+test("13.3: POST /share with no link returns the user without creating an item", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  const { items } = await import("./db/schema.js");
+  try {
+    const before = handle.db.select().from(items).all().length;
+    const res = await app.inject({
+      method: "POST",
+      url: "/share",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "title=Just+a+title&text=no+link+here",
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body, /history\.back|location\.replace/i, "still returns the user");
+    assert.equal(handle.db.select().from(items).all().length, before, "no item created");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 6 (AC 4, 5) — desktop no-regression: with the manifest/SW/share additions in
+// place, existing SPA + collection + item routes still serve unchanged, and the scoped
+// urlencoded parser did NOT leak onto the root app (its JSON-only contract is intact).
+// NOTE (scope honesty): the service worker never executes under inject() — there is no
+// browser. This proves the additions are served additively and existing HTTP routes are
+// untouched; the SW-vs-SSE pass-through (a SW must not buffer text/event-stream) is a
+// browser-only property, verified manually in Chrome (see Completion Notes).
+test("13.3 (NFR-BC): existing routes unchanged + the urlencoded parser stays scoped", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    // The SPA shell still serves.
+    const spa = await app.inject({ method: "GET", url: "/" });
+    assert.equal(spa.statusCode, 200);
+    assert.match(spa.body, /<div id="app">|<title>Board<\/title>/i, "the SPA shell still serves");
+    // Collection + meta routes unchanged.
+    assert.equal((await app.inject({ method: "GET", url: "/api/collections" })).statusCode, 200);
+    assert.equal((await app.inject({ method: "GET", url: "/api/meta" })).statusCode, 200);
+    assert.equal((await app.inject({ method: "GET", url: "/healthz" })).statusCode, 200);
+    // Encapsulation: a urlencoded body on a ROOT JSON route is NOT parsed (the /share
+    // plugin's parser did not leak) — the root app still rejects the media type (415).
+    const leak = await app.inject({
+      method: "POST",
+      url: "/api/collections/inbox/items",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "url=https%3A%2F%2Fx.example",
+    });
+    assert.equal(leak.statusCode, 415, "root app has no urlencoded parser → 415, parser stayed scoped");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Task 5 (AC 3) — a URL embedded in shared text with trailing sentence punctuation is
+// stored WITHOUT the punctuation (so the capture fetch hits the real URL).
+test("13.3: POST /share strips trailing punctuation from a URL found in text", async () => {
+  const { app, handle, dir } = await seededSqliteApp();
+  const { eq } = await import("drizzle-orm");
+  const { items } = await import("./db/schema.js");
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/share",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "text=" + encodeURIComponent("loved this: https://punct.example/p."),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.ok(handle.db.select().from(items).where(eq(items.source, "https://punct.example/p")).get(),
+      "stored URL has no trailing dot");
+    assert.equal(handle.db.select().from(items).where(eq(items.source, "https://punct.example/p.")).get(), undefined,
+      "the punctuation-suffixed URL was NOT stored");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Story 16.3: archive footprint read route ---
+
+test("16.3: GET /api/archive/footprint reports snapshot-only bytes + count (read-only)", async () => {
+  const { initDb } = await import("./db/index.js");
+  const { seed } = await import("./db/seed.js");
+  const { items, assets } = await import("./db/schema.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-foot-"));
+  const snapshotsDir = path.join(dir, "snapshots");
+  fs.mkdirSync(snapshotsDir, { recursive: true });
+  const handle = initDb(path.join(dir, "c.db"));
+  seed(handle.db);
+  const app = await buildServer({ db: handle, snapshotsDir });
+  try {
+    handle.db.insert(items).values({ id: "f1", boardId: "library", source: "https://a" }).run();
+    fs.writeFileSync(path.join(snapshotsDir, "f1.html"), "z".repeat(200));
+    handle.db.insert(assets).values({ id: "f1-snapshot", itemId: "f1", kind: "snapshot", path: "snapshots/f1.html" }).run();
+    handle.db.insert(assets).values({ id: "f1-shot", itemId: "f1", kind: "screenshot", path: "screenshots/f1.png" }).run();
+
+    const res = await app.inject({ method: "GET", url: "/api/archive/footprint" });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body), { totalBytes: 200, count: 1 }, "snapshot-only total (screenshot excluded)");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
