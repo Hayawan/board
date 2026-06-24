@@ -213,7 +213,9 @@ describe('runSnapshotJob — status-neutral degradation (Story 16.1)', () => {
         launch: async () => browser,
         captureHtml: () => new Promise<string>(() => {}), // hangs, ignores the signal
       });
-      const p = runSnapshotJob(handle, { itemId: 'd1', url: 'https://x', capture, snapshotsDir: join(dir, 'snapshots'), timeoutFn: t.fn });
+      // Public IP literal so the SSRF guard takes its DNS-free path — the browser launches
+      // promptly and the timeout-then-SIGKILL timing under test is deterministic.
+      const p = runSnapshotJob(handle, { itemId: 'd1', url: 'https://93.184.216.34', capture, snapshotsDir: join(dir, 'snapshots'), timeoutFn: t.fn });
       await new Promise((r) => setImmediate(r));
       t.fire(); // trip the timeout
       const res = await p;

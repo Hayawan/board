@@ -6,6 +6,7 @@ import type { DbHandle } from '../db/index.js';
 import { enqueueJob, type TimeoutFn } from '../db/queue.js';
 import { writeSnapshotAssetDirect, type SnapshotAssetRef, type SnapshotCapture } from '../db/snapshot-asset.js';
 import { createBrowserTeardown, type TeardownBrowser } from './teardown.js';
+import { assertCapturableUrl } from './net-guard.js';
 
 // Story 16.1 — snapshot capture (self-contained HTML via SingleFile) on the EXISTING
 // single-Chrome sidecar. It mirrors createUrlScreenshotAdapter's lifecycle (injectable
@@ -88,6 +89,8 @@ export function createUrlSnapshotCapture(deps: SnapshotDeps = {}) {
      * ALWAYS awaited (memoized) — a timeout during launch still tears Chrome down.
      */
     async capture(url: string, ctx: SnapshotCtx): Promise<SnapshotCapture | null> {
+      // SSRF guard before launching Chrome — archival must not snapshot an internal target.
+      await assertCapturableUrl(url);
       const launchP = launch();
       const teardown = createBrowserTeardown(launchP as unknown as Promise<TeardownBrowser>, ctx.signal);
       ctx.registerTeardown?.(teardown);
