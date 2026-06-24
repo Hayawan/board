@@ -721,6 +721,121 @@
     .empty h2 { font-size: 18px; font-weight: 500; margin-bottom: 8px; color: var(--text-2); }
     .empty code { font-size: 12px; background: var(--surface); padding: 4px 8px; border-radius: 4px; }
 
+    /* ── Empty states (impeccable craft) ─────────────────────────────────
+       A board with no items leads with its point of view, not a generic blank.
+       A faint, static preview of the board's own layout sits behind the copy
+       (potential, not absence) — decorative, masked clear behind the text. */
+    .empty-state {
+      grid-column: 1 / -1;
+      position: relative;
+      isolation: isolate;
+      min-height: 60vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+    }
+    .empty-copy { position: relative; z-index: 1; width: 100%; max-width: 46ch; text-align: left; }
+    .empty-head {
+      margin: 0 0 10px;
+      font-size: clamp(22px, 3.2vw, 27px);
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.015em;
+      color: var(--text);
+      text-wrap: balance;
+    }
+    .empty-body {
+      margin: 0;
+      max-width: 44ch;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text-2);
+      text-wrap: pretty;
+    }
+    .empty-degraded {
+      margin: 16px 0 0;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      max-width: 44ch;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-3);
+    }
+    .empty-actions { display: flex; align-items: center; gap: 14px; margin-top: 26px; flex-wrap: wrap; }
+    .empty-cta {
+      display: inline-block;
+      font: inherit; font-size: 14px; font-weight: 600;
+      color: #0c0c0c; background: var(--accent);
+      border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      padding: 9px 16px; cursor: pointer; text-decoration: none;
+      transition: filter 140ms cubic-bezier(0.22,1,0.36,1), transform 140ms cubic-bezier(0.22,1,0.36,1);
+    }
+    .empty-cta:hover { filter: brightness(1.08); }
+    .empty-cta:active { transform: translateY(1px); }
+    .empty-cta--ghost { color: var(--text); background: transparent; border-color: var(--border); }
+    .empty-cta--ghost:hover { background: var(--surface); border-color: var(--border-hover); filter: none; }
+    .empty-link {
+      font: inherit; font-size: 14px; color: var(--text-2);
+      background: none; border: none; padding: 4px 2px; cursor: pointer;
+      transition: color 140ms ease;
+    }
+    .empty-link:hover { color: var(--text); }
+    .empty-link span { color: var(--accent); }
+    .empty-hint { margin: 18px 0 0; max-width: 44ch; font-size: 12.5px; line-height: 1.55; color: var(--text-3); }
+    .empty-cta:focus-visible, .empty-cta--ghost:focus-visible, .empty-link:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    .empty-ghost {
+      position: absolute; inset: 0; z-index: 0;
+      display: grid; gap: 14px; padding: 48px;
+      opacity: 0.5; pointer-events: none;
+      -webkit-mask-image: radial-gradient(120% 78% at 50% 36%, transparent 0%, transparent 40%, #000 96%);
+              mask-image: radial-gradient(120% 78% at 50% 36%, transparent 0%, transparent 40%, #000 96%);
+    }
+    .empty-ghost span { border: 1px solid var(--border); border-radius: var(--radius); background: linear-gradient(180deg, var(--surface), transparent); }
+    .empty-ghost--grid { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 116px; }
+    .empty-ghost--list { grid-template-columns: 1fr; grid-auto-rows: 54px; max-width: 760px; margin: 0 auto; }
+    @media (max-width: 640px) {
+      .empty-state { min-height: 56vh; }
+      .empty-ghost--grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .empty-cta { transition: none; }
+    }
+
+    /* ── Welcome / "where to begin" guide (opened from the empty state) ── */
+    .modal.modal--welcome { max-width: 600px; }
+    .welcome { padding: 36px 40px 30px; }
+    .welcome-eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.11em; color: var(--text-3); margin: 0 0 8px; }
+    .welcome-title { margin: 0 0 4px; font-size: 23px; font-weight: 650; line-height: 1.2; letter-spacing: -0.015em; color: var(--text); text-wrap: balance; }
+    .welcome-section { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--border); }
+    .welcome-section h3 { margin: 0 0 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+    .welcome-steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
+    .welcome-steps li { position: relative; padding-left: 36px; font-size: 14px; line-height: 1.55; color: var(--text-2); }
+    .welcome-steps li b { color: var(--text); font-weight: 600; }
+    .welcome-steps li::before {
+      counter-increment: step; content: counter(step);
+      position: absolute; left: 0; top: -1px;
+      width: 24px; height: 24px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+      color: var(--accent); background: var(--accent-dim); border: 1px solid rgba(245,158,11,0.3);
+    }
+    .welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; }
+    .welcome-grid > div { display: flex; flex-direction: column; gap: 3px; }
+    .welcome-grid b { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .welcome-grid span { font-size: 12.5px; line-height: 1.5; color: var(--text-3); }
+    .welcome-letter p { margin: 0 0 13px; font-size: 14.5px; line-height: 1.7; color: var(--text-2); text-wrap: pretty; }
+    .welcome-letter p:last-child { margin-bottom: 0; }
+    .welcome-sign { color: var(--text-3); font-style: italic; }
+    .welcome-footer { display: flex; align-items: center; gap: 16px; margin-top: 30px; }
+    @media (max-width: 560px) {
+      .welcome { padding: 28px 22px 24px; }
+      .welcome-grid { grid-template-columns: 1fr; gap: 16px; }
+    }
+
     /* ── Grid View ── */
     #grid-view {
       display: grid;
@@ -1514,6 +1629,10 @@ LLM_API_KEY=sk-…</pre>
       providerConfigured = !!meta.providerConfigured;
       providerLabel = meta.provider?.label || null;
       updateAnalysisAgentControls();
+      // The empty state's copy is AI-aware (graceful degradation). The first render
+      // above ran before meta resolved (providerConfigured was null → AI-off copy);
+      // if the board is empty, re-render now so it reflects the real provider state.
+      if (!bookmarks.length) applyFilters();
     }
     maybeShowAiNudge();
   }
@@ -2043,7 +2162,7 @@ LLM_API_KEY=sk-…</pre>
 
   function renderGrid() {
     const el = document.getElementById('grid-view');
-    if (!filtered.length) { el.innerHTML = emptyState(); return; }
+    if (!filtered.length) { el.innerHTML = emptyState(bookmarks.length > 0); return; }
     el.innerHTML = filtered.map(b => `
       <div class="grid-card" data-id="${b.id}" style="position:relative">
         ${b.screenshot
@@ -2078,7 +2197,7 @@ LLM_API_KEY=sk-…</pre>
 
   function renderList() {
     const el = document.getElementById('list-view');
-    if (!filtered.length) { el.innerHTML = emptyState(); return; }
+    if (!filtered.length) { el.innerHTML = emptyState(bookmarks.length > 0); return; }
     el.innerHTML = filtered.map(b => `
       <div class="list-card" data-id="${b.id}">
         <div style="display:flex;align-items:center;gap:8px">
@@ -2121,16 +2240,7 @@ LLM_API_KEY=sk-…</pre>
     const listEl = document.getElementById('list-view');
     gridEl.style.display = 'none';
     listEl.style.display = 'block';
-    if (!filtered.length) {
-      const hasItems = bookmarks.length > 0;
-      // Story 8.2 zero-match warm state vs Story 8.6 warm first-run (no cold CLI string).
-      listEl.innerHTML = hasItems
-        ? `<div class="empty" style="text-align:center;padding:64px 24px">
-            <p style="font-size:15px;color:var(--text-2)">No items match these filters</p>
-          </div>`
-        : emptyState();
-      return;
-    }
+    if (!filtered.length) { listEl.innerHTML = emptyState(bookmarks.length > 0); return; }
     listEl.innerHTML = filtered.map(b => `
       <article class="lib-card" data-id="${b.id}">
         <button class="more-btn-list" data-id="${b.id}" title="More">···</button>
@@ -2164,15 +2274,7 @@ LLM_API_KEY=sk-…</pre>
     const listEl = document.getElementById('list-view');
     listEl.style.display = 'none';
     gridEl.style.display = '';
-    if (!filtered.length) {
-      const hasItems = bookmarks.length > 0;
-      gridEl.innerHTML = hasItems
-        ? `<div class="empty" style="grid-column:1/-1;text-align:center;padding:64px 24px">
-            <p style="font-size:15px;color:var(--text-2)">No items match these filters</p>
-          </div>`
-        : emptyState();
-      return;
-    }
+    if (!filtered.length) { gridEl.innerHTML = emptyState(bookmarks.length > 0); return; }
     gridEl.innerHTML = filtered.map(b => `
       <div class="grid-card lib-grid-card" data-id="${b.id}">
         <button class="more-btn-list" data-id="${b.id}" title="More">···</button>
@@ -2513,11 +2615,15 @@ LLM_API_KEY=sk-…</pre>
     }
   });
 
-  function emptyState() {
-    // Story 8.6: ONE warm, descriptor-driven empty state (purpose line + paste invite),
-    // replacing the prototype's cold CLI strings.
+  function emptyState(filtered = false) {
+    // `filtered` true → the board HAS items but the active filters exclude them all
+    // (offer "Clear filters"); false → genuinely empty first-run (board voice + Add).
+    // Provider signal drives the AI-off graceful-degradation copy.
     const activeCol = collections.find(c => c.id === activeCollection);
-    return window.collectionHelpers.renderEmptyState(activeCol);
+    return window.collectionHelpers.renderEmptyState(activeCol, {
+      providerConfigured: providerConfigured === true,
+      filtered,
+    });
   }
 
   function openModal(id) {
@@ -2644,6 +2750,7 @@ LLM_API_KEY=sk-…</pre>
 
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
+    document.getElementById('modal').classList.remove('modal--welcome');
     currentBookmark = null;
     currentLibraryItem = null;
     // Story 8.1: return focus to the card that opened the modal.
@@ -2991,6 +3098,86 @@ LLM_API_KEY=sk-…</pre>
       closeAgentMenu();
     }
   });
+
+  // Empty-state affordances are injected as markup by renderEmptyState, so wire them
+  // once via delegation rather than re-binding on every render.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-empty-add]')) {
+      const input = document.getElementById('add-input');
+      input.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      input.focus();
+      return;
+    }
+    if (e.target.closest('[data-empty-guide]')) { openWelcomeModal(); return; }
+    if (e.target.closest('[data-empty-clear]')) { clearAllFilters(); return; }
+    if (e.target.closest('[data-welcome-close]')) { closeModal(); return; }
+  });
+
+  function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  // Reset every active filter/search facet, then re-render (the "Clear filters" path
+  // from the filtered-to-zero empty state). Mirrors the reset in setActiveCollection.
+  function clearAllFilters() {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('search', ''); set('audience-filter', ''); set('form-filter', ''); set('domain-filter', '');
+    set('library-type-filter', '');
+    activeTiers.clear();
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    activeTag = null;
+    showFavoritesOnly = false;
+    const fav = document.getElementById('fav-filter-btn'); if (fav) fav.classList.remove('active');
+    libraryTopicFilter = '';
+    libraryTypeFilter = '';
+    applyFilters();
+  }
+
+  // The "Where to begin" guide: a short letter from the author + three first steps +
+  // a link to the docs. Opened from the empty state's secondary affordance.
+  function openWelcomeModal() {
+    showModalContent(`
+      <div class="welcome">
+        <p class="welcome-eyebrow">Welcome to board</p>
+        <h2 class="welcome-title">A collection with a point of view.</h2>
+
+        <div class="welcome-section">
+          <h3>Where to begin</h3>
+          <ol class="welcome-steps">
+            <li><b>Capture.</b> Paste a URL above, or share to your Inbox from your phone. It lands in the Inbox first.</li>
+            <li><b>File it.</b> Move it onto a board. If you have wired up an LLM, it fills in the design read on the way.</li>
+            <li><b>Compose.</b> Describe a board you wish existed, and let the composer build one with a stance.</li>
+          </ol>
+        </div>
+
+        <div class="welcome-section">
+          <h3>Worth knowing</h3>
+          <div class="welcome-grid">
+            <div><b>Bring your own LLM</b><span>An API key, a local model, or your Claude Code / Codex subscription.</span></div>
+            <div><b>Share from your phone</b><span>Install board as an app and share any page straight to your Inbox.</span></div>
+            <div><b>Archive a copy</b><span>Opt a board in and it keeps a self-contained snapshot, so a dead link still resolves.</span></div>
+            <div><b>Compose by describing</b><span>Say what you collect; the AI proposes a board with a stance, not a blank form.</span></div>
+            <div><b>Views, not copies</b><span>Save a live lens across every board without duplicating a single item.</span></div>
+            <div><b>Yours on a file</b><span>Everything lives in one SQLite file you can copy and walk away with.</span></div>
+          </div>
+        </div>
+
+        <div class="welcome-section welcome-letter">
+          <p>I built board the way I wanted to keep things: a place with a point of view, not another junk drawer of links I would never open again.</p>
+          <p>It started as a tool just for me. I collect designs and articles compulsively, and nothing I tried actually had taste of its own, so I taught it mine and let it read each thing back to me. What is good here, and what is worth stealing.</p>
+          <p>I am opening it up because the tools I lean on every day were built by people who shared their work freely. This is me passing some of that along. It is yours to run, yours to fork, and yours to keep on a plain file you own.</p>
+          <p>I found it genuinely useful. I hope you do too.</p>
+          <p class="welcome-sign">Sean, the original creator of Board.</p>
+        </div>
+
+        <div class="welcome-footer">
+          <a class="empty-cta" href="https://github.com/Hayawan/board" target="_blank" rel="noopener">Read the docs on GitHub</a>
+          <button type="button" class="empty-link" data-welcome-close>Maybe later</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('modal').classList.add('modal--welcome');
+  }
 
   initAnalysisAgentControl();
   // load() is called by the module script below after collectionHelpers are initialized

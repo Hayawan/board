@@ -328,11 +328,12 @@ test("renderEnrichmentState: 'interrupted' (boot-reconcile reason) is shown, not
 
 // --- Story 8.6: warm zero-config first-run ---
 
-test("renderEmptyState shows the board's WARM purpose line (not just the name)", () => {
+test("renderEmptyState shows the board's STANCE copy (not just the name)", () => {
+  // The empty state leads with each board's point of view, not a generic invite.
   const insp = renderEmptyState({ id: "inspiration", name: "Inspiration" });
-  assert.match(insp, /Designs worth studying/);
+  assert.match(insp, /stealing from/);
   const lib = renderEmptyState({ id: "library", name: "Library" });
-  assert.match(lib, /Things worth keeping/);
+  assert.match(lib, /reading twice/);
 });
 
 test("boardPurpose prefers descriptor.purpose, then per-board fallback, then generic", () => {
@@ -346,4 +347,39 @@ test("shouldShowEnableAiNudge: only when no provider AND not dismissed", () => {
   assert.equal(shouldShowEnableAiNudge({ providerConfigured: false, dismissed: false }), true);
   assert.equal(shouldShowEnableAiNudge({ providerConfigured: true, dismissed: false }), false, "AI on → no nudge");
   assert.equal(shouldShowEnableAiNudge({ providerConfigured: false, dismissed: true }), false, "dismissed → stays gone");
+});
+
+// Empty-state system (impeccable craft): per-board voice, AI-off graceful degradation,
+// filtered-vs-first-run distinction, the "where to begin" affordance, aria-hidden ghost.
+test("renderEmptyState: inbox first-run = 'Inbox zero' calm copy + add/guide CTAs, no clear", () => {
+  const html = renderEmptyState({ id: "inbox", name: "Inbox", view: "list" });
+  assert.ok(html.includes("Inbox zero"), "inbox calm headline");
+  assert.ok(html.includes("data-empty-add"), "primary + Add affordance");
+  assert.ok(html.includes("data-empty-guide"), "secondary where-to-begin affordance");
+  assert.ok(!html.includes("data-empty-clear"), "no clear-filters on a first-run board");
+});
+
+test("renderEmptyState: AI on vs off swaps the promise (graceful degradation)", () => {
+  const col = { id: "inspiration", name: "Inspiration", view: "grid" };
+  const on = renderEmptyState(col, { providerConfigured: true });
+  const off = renderEmptyState(col, { providerConfigured: false });
+  assert.ok(on.toLowerCase().includes("taste"), "AI-on keeps the design-read promise");
+  assert.ok(!on.toLowerCase().includes("ai is off"), "AI-on shows no degraded note");
+  assert.ok(off.toLowerCase().includes("ai is off"), "AI-off shows an honest degraded note");
+});
+
+test("renderEmptyState: filtered variant offers Clear filters, not Add", () => {
+  const html = renderEmptyState({ id: "library", name: "Library", view: "list" }, { filtered: true });
+  assert.ok(html.includes("data-empty-clear"), "clear-filters affordance");
+  assert.ok(!html.includes("data-empty-add"), "no capture CTA when items exist but are filtered out");
+});
+
+test("renderEmptyState: composed board leads with its descriptor purpose", () => {
+  const html = renderEmptyState({ id: "wines", name: "Wines", view: "grid", descriptor: { purpose: "Wines I have tasted, with region and grape." } });
+  assert.ok(html.includes("Wines I have tasted, with region and grape."), "uses boardPurpose for composed boards");
+});
+
+test("renderEmptyState: the layout-preview ghost is aria-hidden (decorative)", () => {
+  const html = renderEmptyState({ id: "inspiration", name: "Inspiration", view: "grid" });
+  assert.ok(html.includes('aria-hidden="true"'), "ghost preview is hidden from AT");
 });

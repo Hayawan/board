@@ -174,14 +174,83 @@ export function boardPurpose(collection) {
   );
 }
 
-// Pure warm empty-state markup (one helper replacing the prototype's two cold CLI
-// empty states). Includes the board's PURPOSE line + a paste invitation.
-export function renderEmptyState(collection) {
+// Per-board "voice" for the first-run empty state: a short stance headline + a body
+// line that states the board's point of view. The body is AI-AWARE — with no provider
+// wired in, it promises a clean bookmark instead of the AI read (graceful degradation).
+function emptyVoice(collection, aiOn) {
+  const id = collection && collection.id;
+  const type = collection && collection.type;
+  if (id === "inbox") {
+    return {
+      head: "Inbox zero.",
+      body: "Everything is where it should be. New captures land here first, then you file them onto a board.",
+    };
+  }
+  if (id === "inspiration" || type === "inspiration") {
+    return {
+      head: "Nothing pinned yet.",
+      body: aiOn
+        ? "Inspiration is for designs worth stealing from. Capture a site and the AI reads its taste back to you."
+        : "Inspiration is for designs worth stealing from. Capture a site and it is kept as a clean visual bookmark.",
+    };
+  }
+  if (id === "library" || type === "library") {
+    return {
+      head: "Nothing shelved yet.",
+      body: aiOn
+        ? "Library is for things worth reading twice. Save a link and it comes back summarized."
+        : "Library is for things worth reading twice. Save a link and it is kept as a clean, readable bookmark.",
+    };
+  }
+  // Composed / custom board: lead with the stance the composer gave it.
+  return { head: "This board is ready.", body: boardPurpose(collection) };
+}
+
+// Empty-state markup. Two conditions, one helper:
+//   - filtered: the board HAS items but the active filters exclude them all → offer a
+//     way back (Clear filters), never the first-run capture invite.
+//   - first-run: the board is genuinely empty → board voice + a "+ Add" CTA, a quiet
+//     "Where to begin" link (opens the welcome guide), a faint aria-hidden preview of
+//     the board's own layout, and an honest AI-off note when no provider is configured.
+// Pure: returns a string. Callers (index.html) wire the [data-empty-*] affordances via
+// one delegated listener.
+export function renderEmptyState(collection, opts = {}) {
+  if (opts.filtered) {
+    return (
+      `<div class="empty-state empty-state--filtered" data-variant="filtered">` +
+      `<div class="empty-copy">` +
+      `<h2 class="empty-head">No matches.</h2>` +
+      `<p class="empty-body">Nothing on this board fits the current filters.</p>` +
+      `<div class="empty-actions">` +
+      `<button type="button" class="empty-cta empty-cta--ghost" data-empty-clear>Clear filters</button>` +
+      `</div></div></div>`
+    );
+  }
+  const aiOn = opts.providerConfigured !== false; // default to AI-on unless told otherwise
+  const v = emptyVoice(collection, aiOn);
+  const isGrid = !!(collection && collection.view === "grid");
+  const ghostKind = isGrid ? "grid" : "list";
+  const cells = isGrid ? 6 : 4;
+  const ghost =
+    `<div class="empty-ghost empty-ghost--${ghostKind}" aria-hidden="true">` +
+    Array.from({ length: cells }).map(() => "<span></span>").join("") +
+    `</div>`;
+  const degraded = aiOn
+    ? ""
+    : `<p class="empty-degraded">AI is off, so items arrive as clean bookmarks. Add an LLM anytime for the design read.</p>`;
   return (
-    `<div class="empty-state">` +
-    `<p class="empty-purpose">${escHtml(boardPurpose(collection))}</p>` +
-    `<p class="empty-hint">Paste a URL above to capture your first item.</p>` +
-    `</div>`
+    `<div class="empty-state" data-variant="first-run">` +
+    ghost +
+    `<div class="empty-copy">` +
+    `<h2 class="empty-head">${escHtml(v.head)}</h2>` +
+    `<p class="empty-body">${escHtml(v.body)}</p>` +
+    degraded +
+    `<div class="empty-actions">` +
+    `<button type="button" class="empty-cta" data-empty-add>+ Add</button>` +
+    `<button type="button" class="empty-link" data-empty-guide>Where to begin <span aria-hidden="true">&rarr;</span></button>` +
+    `</div>` +
+    `<p class="empty-hint">Paste a URL above, drop a link, or share to your Inbox from your phone.</p>` +
+    `</div></div>`
   );
 }
 
