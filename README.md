@@ -30,6 +30,7 @@ the full annotated list). Empty/whitespace values are treated as unset.
 | `DATA_DIR` | `./data` | Persistent data root (SQLite DB + screenshots). |
 | `CHROME_PATH` | autodetect | System Chromium/Chrome binary; autodetected on Linux when unset. |
 | `LLM_AGENT` / `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` | unset | LLM provider. **Unset = no-AI** (enrichment disabled). |
+| `BOARD_API_TOKEN` | unset | Bearer token for the `/api/v1` capture API. **Unset = the v1 API is off** (fail-closed). See [Integrations](docs/integrations.md). |
 
 ## Security & the reverse-proxy model
 
@@ -52,6 +53,22 @@ reverse-proxy-only auth model, AD7). The security posture is:
 
 `oslo` + `argon2` (app-level auth) are reserved for a future v2; v1's auth story is
 the reverse proxy.
+
+## Integrations
+
+Every capture is an HTTP call, so any app, script, shortcut, or agent can drop a
+link into your Inbox (or a specific board). Three entry points:
+
+- **`POST /api/v1/items`** `{url, boardId?}` — the token-authed API (set
+  `BOARD_API_TOKEN`); omit `boardId` and it lands in the Inbox.
+- **`POST /share`** `url=…` — the no-auth PWA share target (always → Inbox); what
+  the phone share sheet uses.
+- **`POST /api/collections/<id>/items`** `{url}` — the same-origin route the web app
+  uses, to target a board by id.
+
+See **[docs/integrations.md](docs/integrations.md)** for `curl` examples, response
+shapes, the auth/exposure model, and recipes (shell alias, phone shortcut,
+bookmarklet, agents).
 
 ## Self-hosting on a Debian LXC (systemd)
 
