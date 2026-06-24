@@ -4,6 +4,7 @@ import { boards, items, type NewAsset } from '../db/schema.js';
 import { writeItemDirect } from '../db/queue.js';
 import { createUrlScreenshotAdapter } from './url-screenshot.js';
 import { createUrlReadableAdapter } from './url-readable.js';
+import { assertCapturableUrl } from './net-guard.js';
 import { SYSTEM_COLUMNS, type BoardDescriptor } from '../descriptor/types.js';
 import type { DbHandle } from '../db/index.js';
 
@@ -108,6 +109,10 @@ export async function dispatchCapture(
   if (!adapter) {
     throw new Error(`No capture adapter registered for ingest_mode "${ingestMode}"`);
   }
+  // SSRF guard: every URL adapter (url-screenshot, url-readable) fetches a user-supplied
+  // URL here — block private/loopback/link-local targets BEFORE the fetch. Buffer sources
+  // (manual-upload) carry no URL and fall through. Reached by create/share/assign/refetch.
+  if (typeof source === 'string') await assertCapturableUrl(source);
   return adapter.fetch(source, ctx);
 }
 

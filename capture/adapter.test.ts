@@ -125,3 +125,26 @@ describe('runCaptureForItem idempotency (Story 6.1)', () => {
     assert.equal((row?.fields as Record<string, unknown>).body, 'injob');
   });
 });
+
+// Follow-up (SSRF): the dispatchCapture seam guards a user-supplied URL BEFORE the adapter
+// fetches it — so create/share/assign/refetch can't be steered at an internal address.
+describe('dispatchCapture — SSRF guard at the URL seam', () => {
+  it('blocks a private/loopback URL before the adapter runs', async () => {
+    const registry = createCaptureRegistry();
+    let fetched = false;
+    registry.register({ ingestMode: 'url-readable', fetch: async () => { fetched = true; return { fields: {}, assets: [] }; } });
+    await assert.rejects(
+      dispatchCapture(registry, 'url-readable', 'http://169.254.169.254/latest/meta-data/', {} as never),
+      /BlockedUrlError|blocked/i,
+    );
+    assert.equal(fetched, false, 'the adapter fetch never ran for a blocked URL');
+  });
+
+  it('lets a manual-upload buffer source through (no URL to guard)', async () => {
+    const registry = createCaptureRegistry();
+    let fetched = false;
+    registry.register({ ingestMode: 'manual-upload', fetch: async () => { fetched = true; return { fields: {}, assets: [] }; } });
+    await dispatchCapture(registry, 'manual-upload', { buffer: Buffer.from('img') }, {} as never);
+    assert.equal(fetched, true, 'buffer sources skip the URL guard');
+  });
+});
