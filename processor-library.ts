@@ -123,7 +123,7 @@ export function extractReadableMarkdown(html: string, url: string): string {
   const article = new Readability(dom.window.document).parse();
   if (article) {
     const titleLine = article.title ? `# ${article.title}\n\n` : "";
-    const body = new TurndownService().turndown(article.content);
+    const body = new TurndownService().turndown(article.content ?? "");
     return (titleLine + body).slice(0, 10000);
   }
   return (dom.window.document.body?.textContent ?? "").slice(0, 10000);

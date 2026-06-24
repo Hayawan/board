@@ -49,8 +49,8 @@ export function buildEnrichmentSchema(descriptor: BoardDescriptor): z.ZodObject<
 }
 
 /** Build the enrichment prompt: the descriptor's prompt + captured content, guarded. */
-export function buildEnrichmentPrompt(descriptor: BoardDescriptor, item: { title?: string | null; source?: string | null; fields?: Record<string, unknown> | null }): string {
-  const fields = item.fields ?? {};
+export function buildEnrichmentPrompt(descriptor: BoardDescriptor, item: { title?: string | null; source?: string | null; fields?: unknown }): string {
+  const fields = (item.fields ?? {}) as Record<string, unknown>;
   const capturedText = typeof fields.text === 'string' ? fields.text : '';
 
   // Per-field fill guidance: enumerate the AI-fillable (enrichable, non-image) fields
