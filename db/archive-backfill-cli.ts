@@ -2,6 +2,7 @@ import { getDb } from './index.js';
 import { config } from './../config.js';
 import { runSnapshotJob } from '../capture/url-snapshot.js';
 import { backfillSnapshots } from './archive-backfill.js';
+import { isServerListening } from '../server-lock.js';
 
 // Story 16.3 — operator-invokable backfill runner (`npm run archive:backfill`). NOT a
 // skill (the v1 skill list is fixed, Story 8.3) — a maintenance CLI like import:flat.
@@ -12,8 +13,19 @@ import { backfillSnapshots } from './archive-backfill.js';
 //
 // ⚠ STOP THE SERVER FIRST. The concurrency-1 guarantee is PER-PROCESS — this CLI has its
 // own worker + its own Chrome. Running it while the live server is also capturing would
-// put two Chromiums on the box at once (the OOM NFR-1 exists to prevent). There is no
-// cross-process lock; coordinate by stopping the server (or running during idle).
+// put two Chromiums on the box at once (the OOM NFR-1 exists to prevent). This is now
+// GUARDED: if the server's port is up the CLI refuses to start (override with
+// BOARD_ALLOW_CONCURRENT_CHROME=1 if you understand the risk).
+
+if (process.env.BOARD_ALLOW_CONCURRENT_CHROME !== '1' && (await isServerListening(config.host, config.port))) {
+  console.error(
+    `[archive:backfill] refusing to run: a server appears to be listening on ` +
+      `${config.host}:${config.port}. Concurrency-1 is per-process — a second Chrome ` +
+      `risks the OOM NFR-1 guards against.\n` +
+      `Stop the board server first, or set BOARD_ALLOW_CONCURRENT_CHROME=1 to override.`,
+  );
+  process.exit(1);
+}
 
 const handle = getDb();
 
