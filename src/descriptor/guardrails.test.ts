@@ -76,6 +76,23 @@ describe('composer guardrails — validateDescriptorProposal (Story 10.2)', () =
     assert.equal(validateDescriptorProposal(INSPIRATION_DESCRIPTOR).ok, true, 'seeded Inspiration descriptor validates');
     assert.equal(validateDescriptorProposal(LIBRARY_DESCRIPTOR).ok, true, 'seeded Library descriptor validates');
   });
+
+  // Story C — composed empty-state copy: normalized (trimmed/capped), dropped if blank.
+  it('trims + caps empty_state copy and keeps it when both halves are present', () => {
+    const r = validateDescriptorProposal({
+      ...validDescriptor(),
+      empty_state: { head: '  No clips yet.  ', body: '  ' + 'x'.repeat(400) + '  ' },
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.descriptor?.empty_state?.head, 'No clips yet.', 'head trimmed');
+    assert.equal(r.descriptor?.empty_state?.body.length, 200, 'body capped to 200');
+  });
+
+  it('drops empty_state entirely when either half is blank (falls back to generic voice)', () => {
+    const r = validateDescriptorProposal({ ...validDescriptor(), empty_state: { head: 'Hi', body: '   ' } });
+    assert.equal(r.ok, true);
+    assert.equal(r.descriptor?.empty_state, undefined, 'blank body → whole block dropped');
+  });
 });
 
 describe('composer guardrails — validateAndRepair (Story 10.2)', () => {

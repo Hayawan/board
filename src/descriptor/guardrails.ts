@@ -9,6 +9,10 @@ import { BoardDescriptorSchema, SYSTEM_COLUMNS, type BoardDescriptor } from './t
 // bounding a 500-field proposal.
 export const FIELD_CAP = 24;
 
+// Empty-state copy caps: a stance headline stays a headline, the body stays one line.
+export const EMPTY_STATE_HEAD_CAP = 60;
+export const EMPTY_STATE_BODY_CAP = 200;
+
 // Reserved field keys = the structural/system `item` columns (Story 1.1) a descriptor
 // field key must never shadow.
 //
@@ -62,6 +66,18 @@ export function validateDescriptorProposal(
   }
 
   const descriptor = parsed.data;
+
+  // Normalize the optional empty-state copy: trim, cap to keep it a glance-able
+  // headline + one line (the LLM occasionally over-writes), and DROP the whole block
+  // if either half is empty after trimming — a blank head/body is worse than the
+  // generic fallback voice. Not an error (copy is best-effort), so no repair re-ask.
+  if (descriptor.empty_state) {
+    const head = descriptor.empty_state.head.trim().slice(0, EMPTY_STATE_HEAD_CAP);
+    const body = descriptor.empty_state.body.trim().slice(0, EMPTY_STATE_BODY_CAP);
+    if (head && body) descriptor.empty_state = { head, body };
+    else delete descriptor.empty_state;
+  }
+
   const errors: ProposalError[] = [];
 
   // Cap the RESULTING board: proposed fields + any existing keys (Story 10.3 passes

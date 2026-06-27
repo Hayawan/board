@@ -562,6 +562,21 @@ test("PATCH /api/boards/:id renames; DELETE /api/boards/:id cascades", async () 
   }
 });
 
+test("DELETE /api/boards/inbox is refused (409) — Inbox is a protected system board", async () => {
+  const { boards } = await import("./db/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const d = await app.inject({ method: "DELETE", url: "/api/boards/inbox" });
+    assert.equal(d.statusCode, 409);
+    // The board is still there — the guard refused before cascade.
+    assert.ok(handle.db.select().from(boards).where(eq(boards.id, "inbox")).get(), "inbox must survive the delete attempt");
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- PATCH /api/boards/:id descriptor update (board field editor) ---
 
 test("PATCH /api/boards/:id updates the descriptor (valid) and 400s on invalid", async () => {

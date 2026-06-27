@@ -22,6 +22,7 @@ import {
   renderEnrichmentState,
   boardPurpose,
   renderEmptyState,
+  renderBoardsFallback,
   shouldShowEnableAiNudge,
 } from "./collections-ui.js";
 
@@ -383,6 +384,30 @@ test("renderEmptyState: filtered variant offers Clear filters, not Add", () => {
 test("renderEmptyState: composed board leads with its descriptor purpose", () => {
   const html = renderEmptyState({ id: "wines", name: "Wines", view: "grid", descriptor: { purpose: "Wines I have tasted, with region and grape." } });
   assert.ok(html.includes("Wines I have tasted, with region and grape."), "uses boardPurpose for composed boards");
+});
+
+test("renderEmptyState: composed board prefers descriptor.empty_state copy (Story C delight)", () => {
+  const html = renderEmptyState({
+    id: "moodboard", name: "Mood", view: "grid",
+    descriptor: { empty_state: { head: "Nothing in the mood yet.", body: "Drop a reference and it joins the wall." } },
+  });
+  assert.ok(html.includes("Nothing in the mood yet."), "uses the composed head, not the generic 'This board is ready.'");
+  assert.ok(html.includes("Drop a reference and it joins the wall."), "uses the composed body");
+  assert.ok(!html.includes("This board is ready."), "generic fallback suppressed when empty_state present");
+});
+
+test("renderBoardsFallback: unavailable variant offers Retry, not a create CTA", () => {
+  const html = renderBoardsFallback({ unavailable: true });
+  assert.ok(html.includes("Can't reach the server."), "states the problem calmly");
+  assert.ok(html.includes("data-boards-retry"), "offers a Retry affordance");
+  assert.ok(!html.includes("data-boards-new"), "no create CTA in the error variant");
+});
+
+test("renderBoardsFallback: no-boards variant invites composing the first board", () => {
+  const html = renderBoardsFallback({});
+  assert.ok(html.includes("No boards yet."), "no-boards head");
+  assert.ok(html.includes("data-boards-new"), "offers the 'Describe a board' CTA");
+  assert.ok(html.includes('aria-hidden="true"'), "decorative ghost is hidden from AT");
 });
 
 test("renderEmptyState: the layout-preview ghost is aria-hidden (decorative)", () => {

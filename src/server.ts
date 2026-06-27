@@ -469,6 +469,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
     }
   );
   app.delete<{ Params: { id: string } }>("/api/boards/:id", async (req, reply) => {
+    // Inbox is the system fallback board — every capture lands there first, and it's
+    // the one board guaranteed to exist. Refuse to delete it so the app can never end
+    // up with zero boards (the UI's "no boards" state is then purely defensive).
+    if (req.params.id === INBOX_BOARD_ID) {
+      reply.status(409);
+      return { error: "The Inbox board can't be deleted." };
+    }
     const res = await deleteBoardCascade(opts.db ?? getDb(), req.params.id, screenshotsDir);
     if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
     return res;

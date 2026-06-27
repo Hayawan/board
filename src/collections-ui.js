@@ -206,7 +206,11 @@ function emptyVoice(collection, aiOn) {
         : "Library is for things worth reading twice. Save a link and it is kept as a clean, readable bookmark.",
     };
   }
-  // Composed / custom board: lead with the stance the composer gave it.
+  // Composed / custom board: lead with the bespoke empty-state copy the composer wrote
+  // for it (a moment of delight in the board's own voice, Story C). Guardrails guarantee
+  // both halves are non-empty when present; otherwise fall back to the generic stance.
+  const es = collection && collection.descriptor && collection.descriptor.empty_state;
+  if (es && es.head && es.body) return { head: es.head, body: es.body };
   return { head: "This board is ready.", body: boardPurpose(collection) };
 }
 
@@ -254,6 +258,45 @@ export function renderEmptyState(collection, opts = {}) {
     `<button type="button" class="empty-link" data-empty-guide>Where to begin <span aria-hidden="true">&rarr;</span></button>` +
     `</div>` +
     `<p class="empty-hint">Paste a URL above, drop a link, or share to your Inbox from your phone.</p>` +
+    `</div></div>`
+  );
+}
+
+// Board-level fallback states — "degrade with dignity" at the whole-board level, so the
+// app never white-screens or dead-ends (Design Principle 3). Two variants, same calm
+// visual language as renderEmptyState (ghost grid + empty-copy), pure markup:
+//   - unavailable: the boards couldn't be fetched (server down / error) → Retry.
+//   - no-boards:   the fetch succeeded but there are zero boards (defensive once Inbox
+//                  is protected) → an invite to compose the first board.
+// Callers wire the [data-boards-retry] / [data-boards-new] affordances.
+export function renderBoardsFallback(opts = {}) {
+  const unavailable = opts.unavailable === true;
+  const ghost =
+    `<div class="empty-ghost empty-ghost--grid" aria-hidden="true">` +
+    Array.from({ length: 6 }).map(() => "<span></span>").join("") +
+    `</div>`;
+  if (unavailable) {
+    return (
+      `<div class="empty-state" data-variant="unavailable">` +
+      ghost +
+      `<div class="empty-copy">` +
+      `<h2 class="empty-head">Can't reach the server.</h2>` +
+      `<p class="empty-body">Board couldn't load your boards. Check that the service is running, then try again.</p>` +
+      `<div class="empty-actions">` +
+      `<button type="button" class="empty-cta" data-boards-retry>Retry</button>` +
+      `</div></div></div>`
+    );
+  }
+  return (
+    `<div class="empty-state" data-variant="no-boards">` +
+    ghost +
+    `<div class="empty-copy">` +
+    `<h2 class="empty-head">No boards yet.</h2>` +
+    `<p class="empty-body">Describe what you collect and Board composes one: its capture mode, the fields worth keeping, the layout.</p>` +
+    `<div class="empty-actions">` +
+    `<button type="button" class="empty-cta" data-boards-new>Describe a board</button>` +
+    `</div>` +
+    `<p class="empty-hint">or press + in the header anytime.</p>` +
     `</div></div>`
   );
 }
