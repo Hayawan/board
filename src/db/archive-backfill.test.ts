@@ -83,7 +83,7 @@ describe('backfillSnapshots (Story 16.3)', () => {
       assert.ok(handle.db.select().from(assets).where(eq(assets.id, 'k1-snapshot')).get(), 'snapshot added alongside the screenshot');
       const shot = handle.db.select().from(assets).where(eq(assets.id, 'k1-shot')).get();
       assert.ok(shot && shot.kind === 'screenshot' && shot.hash === 'shot', 'screenshot asset untouched');
-      assert.equal((handle.db.select().from(items).where(eq(items.id, 'k1')).get().fields as any).summary, 'keep', 'item fields untouched');
+      assert.equal((handle.db.select().from(items).where(eq(items.id, 'k1')).get()!.fields as any).summary, 'keep', 'item fields untouched');
     } finally {
       handle.sqlite.close();
       rmSync(dir, { recursive: true, force: true });

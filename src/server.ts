@@ -73,7 +73,7 @@ export function warnIfExposed(opts: ListenOptions, logger: { warn: (m: string) =
     );
   }
 }
-const TAXONOMY_FILE = path.join(__dirname, "taxonomy.json");
+const TAXONOMY_FILE = path.join(__dirname, "..", "taxonomy.json");
 
 interface Bookmark {
   id: string;
@@ -128,7 +128,7 @@ function spawnAddItem(
     if (opts.instructions) env.BOARD_INSTRUCTIONS = opts.instructions;
     if (opts.analysisAgent) env.BOARD_ANALYSIS_AGENT = opts.analysisAgent;
 
-    const proc = spawn("npx", args, { cwd: __dirname, env });
+    const proc = spawn("npx", args, { cwd: path.join(__dirname, ".."), env });
     let stderr = "";
     proc.stderr.on("data", (d) => { stderr += d.toString(); });
     proc.on("close", (code) => {
@@ -344,12 +344,30 @@ export async function buildServer(opts: BuildServerOptions = {}) {
 
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024 });
 
+  // Static shell (index.html, sw.js, manifest, icons) lives in ../public. The
+  // browser-shipped JS modules stay under src/ (next to their node tests and the
+  // descriptor module they import) and are served by the two explicit routes below.
+  const publicDir = path.join(__dirname, "..", "public");
   await app.register(fastifyStatic, {
-    root: __dirname,
+    root: publicDir,
     prefix: "/",
     index: false,
     serve: true,
   });
+
+  // The two browser entry points the page fetches live under src/ (no build step),
+  // outside the public static root. Serve them explicitly with a plain route (same
+  // pattern as /screenshots/* below) rather than a 2nd @fastify/static instance,
+  // which would crash on decorateReply double-registration.
+  const sendJs = (reply: FastifyReply, abs: string) => {
+    if (!fs.existsSync(abs)) { reply.status(404); return { error: "Not found" }; }
+    reply.type("text/javascript");
+    return reply.send(fs.createReadStream(abs));
+  };
+  app.get("/collections-ui.js", async (_req, reply) =>
+    sendJs(reply, path.join(__dirname, "collections-ui.js")));
+  app.get("/descriptor/render-map.js", async (_req, reply) =>
+    sendJs(reply, path.join(__dirname, "descriptor", "render-map.js")));
 
   // Screenshots now live OUTSIDE __dirname (under DATA_DIR), so the static root no
   // longer serves them. Stream them from screenshotsDir at the /screenshots/ prefix
@@ -451,6 +469,13 @@ export async function buildServer(opts: BuildServerOptions = {}) {
     }
   );
   app.delete<{ Params: { id: string } }>("/api/boards/:id", async (req, reply) => {
+    // Inbox is the system fallback board — every capture lands there first, and it's
+    // the one board guaranteed to exist. Refuse to delete it so the app can never end
+    // up with zero boards (the UI's "no boards" state is then purely defensive).
+    if (req.params.id === INBOX_BOARD_ID) {
+      reply.status(409);
+      return { error: "The Inbox board can't be deleted." };
+    }
     const res = await deleteBoardCascade(opts.db ?? getDb(), req.params.id, screenshotsDir);
     if (!res.deleted) { reply.status(404); return { error: "Not found" }; }
     return res;

@@ -85,7 +85,7 @@ export function writeSnapshotAssetDirect(
         set: { path: relPath, hash: snapshot.hash, capturedAt: sql`(unixepoch())` },
       })
       .run();
-    return { written: true, asset: { kind: 'snapshot', path: relPath, hash: snapshot.hash } };
+    return { written: true, asset: { kind: 'snapshot' as const, path: relPath, hash: snapshot.hash } };
   })();
 }
 

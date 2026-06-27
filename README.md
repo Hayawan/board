@@ -84,7 +84,7 @@ installs the app to `/opt/board-oss` with a persistent `DATA_DIR` at
 (`deploy/board-oss.service`), and waits for `/healthz`. Tunables via env:
 `APP_DIR`, `DATA_DIR`, `PORT`, `APP_USER`.
 
-- **Run mode:** the service runs `node --import tsx server.ts` (no build step; `tsx`
+- **Run mode:** the service runs `node --import tsx src/server.ts` (no build step; `tsx`
   + `typescript` are runtime deps, so `npm ci --omit=dev` keeps them).
 - **`better-sqlite3`** uses its prebuilt binary on glibc Linux / Node LTS (no
   compiler needed). If a from-source build is ever required, `apt-get install -y
@@ -143,3 +143,7 @@ asserting `/healthz` and a real in-container screenshot capture.
 Your data is a plain SQLite file plus a `screenshots/` directory under `DATA_DIR` —
 copy the directory and walk away. Upgrading the code (a `git pull` / container
 rebuild) never touches `DATA_DIR`.
+
+## License
+
+[MIT](./LICENSE) © Seanathon

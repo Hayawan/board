@@ -9,7 +9,7 @@ import { loadConfig } from "./config.js";
 import { BOOKMARKS_FILE, getCollection, loadCollection, saveCollection } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LIBRARY_FILE = path.join(__dirname, getCollection("library").dataFile);
+const LIBRARY_FILE = path.join(__dirname, "..", getCollection("library").dataFile);
 
 // library.json / bookmarks.json are gitignored personal-capture files (absent in
 // CI). snapshotFile tolerates a missing file (returns null); restoreFile puts the
@@ -556,6 +556,21 @@ test("PATCH /api/boards/:id renames; DELETE /api/boards/:id cascades", async () 
     assert.equal(d.statusCode, 200);
     assert.equal(handle.db.select().from(boards).where(eq(boards.id, "wines")).get(), undefined);
     assert.equal((await app.inject({ method: "DELETE", url: "/api/boards/ghost" })).statusCode, 404);
+  } finally {
+    handle.sqlite.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("DELETE /api/boards/inbox is refused (409) — Inbox is a protected system board", async () => {
+  const { boards } = await import("./db/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const { app, handle, dir } = await seededSqliteApp();
+  try {
+    const d = await app.inject({ method: "DELETE", url: "/api/boards/inbox" });
+    assert.equal(d.statusCode, 409);
+    // The board is still there — the guard refused before cascade.
+    assert.ok(handle.db.select().from(boards).where(eq(boards.id, "inbox")).get(), "inbox must survive the delete attempt");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

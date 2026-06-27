@@ -78,6 +78,13 @@ export const BoardDescriptorSchema = z.object({
   enrichment_prompt: z.string(),
   view: z.enum(['grid', 'list']),
   ingest_mode: z.enum(['url-screenshot', 'url-readable', 'manual-upload']),
+  // OPTIONAL, backward-compatible (NFR-BC, like archive_on_promote): the composed
+  // board's first-run empty-state copy in its own voice — a short stance `head` and an
+  // inviting `body`. The seeded boards (inspiration/library/inbox) carry bespoke copy
+  // in the UI; a composed board ("Mood board", "Videos") gets its delight from here.
+  // Lenient strings: guardrails trim/cap and DROP this whole block if either is empty,
+  // so the UI falls back to the generic voice rather than rendering a blank headline.
+  empty_state: z.object({ head: z.string(), body: z.string() }).optional(),
   // Story 16.2 — OPTIONAL, default-off: when true, promoting (assigning) an item to this
   // board enqueues a self-contained-HTML snapshot (Story 16.1) for that item. Additive —
   // every pre-wave descriptor (without it) still validates and reads archival OFF (NFR-BC).

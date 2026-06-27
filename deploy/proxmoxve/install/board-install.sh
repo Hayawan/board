@@ -54,7 +54,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/board
 EnvironmentFile=/opt/board/.env
-ExecStart=/usr/bin/env node --import tsx server.ts
+ExecStart=/usr/bin/env node --import tsx src/server.ts
 Restart=on-failure
 RestartSec=5
 

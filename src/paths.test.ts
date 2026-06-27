@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { loadConfig, ensureDataDir } from './config.js';
 
-const repoRoot = dirname(fileURLToPath(import.meta.url));
+// This test lives in src/; the repo root (the "app tree" data must never land in) is one up.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('DATA_DIR-rooted paths (Story 2.2)', () => {
   // AC 1 / AC 3 — all data paths derive from DATA_DIR and none lands in the app tree

@@ -170,7 +170,7 @@ describe('runSnapshotJob — status-neutral degradation (Story 16.1)', () => {
       });
       const res = await runSnapshotJob(handle, { itemId: 'd1', url: 'https://x', capture, snapshotsDir: join(dir, 'snapshots') });
       assert.equal(res.status, 'failed');
-      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get().status, 'done', 'status untouched');
+      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get()!.status, 'done', 'status untouched');
       assert.equal(handle.db.select().from(assets).where(eq(assets.itemId, 'd1')).all().length, 0, 'no asset written');
     } finally {
       handle.sqlite.close();
@@ -194,7 +194,7 @@ describe('runSnapshotJob — status-neutral degradation (Story 16.1)', () => {
       const capture = createUrlSnapshotCapture({ launch: async () => inspectableBrowser().browser, captureHtml: moduleNotFound });
       const res = await runSnapshotJob(handle, { itemId: 'd1', url: 'https://x', capture, snapshotsDir: join(dir, 'snapshots') });
       assert.equal(res.status, 'failed', 'module-absence is swallowed like any capture failure');
-      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get().status, 'done');
+      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get()!.status, 'done');
       assert.equal(handle.db.select().from(assets).where(eq(assets.itemId, 'd1')).all().length, 0);
     } finally {
       handle.sqlite.close();
@@ -221,7 +221,7 @@ describe('runSnapshotJob — status-neutral degradation (Story 16.1)', () => {
       const res = await p;
       assert.equal(res.status, 'failed');
       assert.equal(proc.killed, true, 'the hung browser was SIGKILL-ed on the teardown path');
-      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get().status, 'done');
+      assert.equal(handle.db.select().from(items).where(eq(items.id, 'd1')).get()!.status, 'done');
     } finally {
       handle.sqlite.close();
       rmSync(dir, { recursive: true, force: true });
@@ -256,7 +256,7 @@ describe('runSnapshotJob — success path through the worker slot (Story 16.1)',
       assert.ok(row, 'snapshot asset row persisted');
       assert.equal(row.kind, 'snapshot');
       assert.ok(existsSync(join(dir, 'snapshots', 'ok1.html')), 'snapshot html written');
-      assert.equal(handle.db.select().from(items).where(eq(items.id, 'ok1')).get().status, 'done', 'status untouched');
+      assert.equal(handle.db.select().from(items).where(eq(items.id, 'ok1')).get()!.status, 'done', 'status untouched');
     } finally {
       handle.sqlite.close();
       rmSync(dir, { recursive: true, force: true });

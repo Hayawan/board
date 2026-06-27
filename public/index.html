@@ -1680,8 +1680,27 @@ LLM_API_KEY=sk-…</pre>
   async function load() {
     const helpers = window.collectionHelpers;
     const storedCid = localStorage.getItem('board.activeCollection') || 'inspiration';
-    const collectionsRes = await fetch('/api/collections');
-    collections = await collectionsRes.json();
+    // Boards must load before anything else can render. A fetch failure (server down)
+    // or zero boards used to throw past renderSwitcher and white-screen the app; instead
+    // render a dignified board-level fallback so the chrome (incl. the + affordance) and
+    // a way forward always appear (Design Principle 3: degrade with dignity).
+    try {
+      const collectionsRes = await fetch('/api/collections');
+      if (!collectionsRes.ok) throw new Error('collections ' + collectionsRes.status);
+      collections = await collectionsRes.json();
+    } catch {
+      renderSwitcher();
+      showBoardsFallback({ unavailable: true });
+      return;
+    }
+    if (!collections.length) {
+      renderSwitcher();
+      showBoardsFallback({ unavailable: false });
+      return;
+    }
+    // Boards loaded → restore the toolbar row the fallback hides, then render normally.
+    const toolbar = document.querySelector('.filters')?.closest('.header-row');
+    if (toolbar) toolbar.style.display = '';
     activeCollection = helpers.resolveActiveCollection(storedCid, collections);
     const activeCol = collections.find(c => c.id === activeCollection);
 
@@ -1709,6 +1728,30 @@ LLM_API_KEY=sk-…</pre>
       if (!bookmarks.length) applyFilters();
     }
     maybeShowAiNudge();
+  }
+
+  // Render a whole-board fallback (server unreachable, or zero boards) into the main
+  // area: hide the filter toolbar + clouds, take over grid-view, and wire the variant's
+  // affordance — Retry re-runs load(), "Describe a board" opens the existing composer
+  // (progressive disclosure: the empty state is the invite, the modal is the detail).
+  function showBoardsFallback(opts) {
+    // Hide the whole filter/sort/view toolbar row (board-scoped + inert here); the
+    // header-row-left (title, switcher, search, add) stays so the chrome is intact.
+    const toolbar = document.querySelector('.filters')?.closest('.header-row');
+    if (toolbar) toolbar.style.display = 'none';
+    const tagCloud = document.getElementById('tag-cloud');
+    const libCloud = document.getElementById('library-topic-cloud');
+    if (tagCloud) tagCloud.style.display = 'none';
+    if (libCloud) libCloud.style.display = 'none';
+    const listView = document.getElementById('list-view');
+    const gridView = document.getElementById('grid-view');
+    listView.innerHTML = ''; listView.style.display = 'none';
+    gridView.style.display = '';
+    gridView.innerHTML = window.collectionHelpers.renderBoardsFallback(opts);
+    const retry = gridView.querySelector('[data-boards-retry]');
+    if (retry) retry.addEventListener('click', () => load());
+    const create = gridView.querySelector('[data-boards-new]');
+    if (create) create.addEventListener('click', openComposeModal);
   }
 
   // Story 8.6: a peripheral, dismissible "enable AI" nudge — only when no provider is
@@ -1762,17 +1805,20 @@ LLM_API_KEY=sk-…</pre>
       const headerLeft = document.querySelector('.header-row-left');
       headerLeft.insertBefore(sw, document.getElementById('search'));
     }
+    // Edit (⚙) only makes sense with an active board; the New-board (+) affordance is
+    // ALWAYS present so a board can be created even from the empty/degraded states.
+    const hasActive = !!collections.find(c => c.id === activeCollection);
     sw.innerHTML = collections.map(c =>
       `<button class="coll-btn${activeCollection === c.id ? ' active' : ''}" data-cid="${esc(c.id)}">${esc(c.name)}</button>`
     ).join('')
-      // New-board + Edit-board affordances (compose-board / edit-board modals).
-      + `<button class="coll-btn coll-edit" id="edit-board-btn" title="Edit this board">⚙</button>`
+      + (hasActive ? `<button class="coll-btn coll-edit" id="edit-board-btn" title="Edit this board">⚙</button>` : '')
       + `<button class="coll-btn coll-new" id="new-board-btn" title="New board">+</button>`;
     sw.querySelectorAll('.coll-btn[data-cid]').forEach(b =>
       b.addEventListener('click', () => setActiveCollection(b.dataset.cid))
     );
     document.getElementById('new-board-btn').addEventListener('click', openComposeModal);
-    document.getElementById('edit-board-btn').addEventListener('click', () => openEditBoardModal(activeCollection));
+    const editBtn = document.getElementById('edit-board-btn');
+    if (editBtn) editBtn.addEventListener('click', () => openEditBoardModal(activeCollection));
   }
 
   // --- Story 10.1/10.3 + Edit: New board (compose→preview→create) & Edit board (rename/delete) ---
@@ -3355,8 +3401,8 @@ LLM_API_KEY=sk-…</pre>
   // load() is called by the module script below after collectionHelpers are initialized
 </script>
 <script type="module">
-  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge } from './collections-ui.js';
-  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, shouldShowEnableAiNudge };
+  import { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, renderBoardsFallback, shouldShowEnableAiNudge } from './collections-ui.js';
+  window.collectionHelpers = { resolveActiveCollection, itemsUrl, itemUrl, addUrl, refetchUrl, screenshotUrl, moveUrl, eventsUrl, collectionChrome, matchesLibraryFilters, topicCounts, selectView, itemFieldEntries, getFieldValue, buildFilters, matchesFilters, applySseEvent, renderEnrichmentState, boardPurpose, renderEmptyState, renderBoardsFallback, shouldShowEnableAiNudge };
   // Story 7.2: generic descriptor-driven field renderer (Epic 8 wires it into the
   // descriptor-driven card/modal when the UI consumes the SQLite item model).
   import { renderField, renderFields, renderAsset, isSafeUrl } from './descriptor/render-map.js';
