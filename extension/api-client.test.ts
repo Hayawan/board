@@ -89,10 +89,10 @@ test("13.4: reviewAction() shows a chip for a suggestion, falls back to manual w
 // in the Inbox; assign() actually moves board_id. This is what makes the mocks above
 // trustworthy (e.g. it would catch a wrong assign body shape — the real route 400s).
 test("13.4 (contract): save→Inbox and assign→move work against a real buildServer", async () => {
-  const { buildServer } = await import("../server.js");
-  const { initDb } = await import("../db/index.js");
-  const { seed } = await import("../db/seed.js");
-  const { items } = await import("../db/schema.js");
+  const { buildServer } = await import("../src/server.js");
+  const { initDb } = await import("../src/db/index.js");
+  const { seed } = await import("../src/db/seed.js");
+  const { items } = await import("../src/db/schema.js");
   const { eq } = await import("drizzle-orm");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "board-oss-ext-"));
   const handle = initDb(path.join(dir, "c.db"));

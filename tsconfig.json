@@ -19,7 +19,7 @@
     "node_modules",
     "scripts",
     "get_advice.cjs",
-    "sw.js",
+    "public/sw.js",
     "extension/popup.js",
     "extension/options.js"
   ]

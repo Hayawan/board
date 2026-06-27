@@ -69,7 +69,7 @@ let _manifest: CollectionMeta[] | null = null;
 function loadManifest(): CollectionMeta[] {
   if (!_manifest) {
     _manifest = JSON.parse(
-      fs.readFileSync(path.join(__dirname, "collections.json"), "utf-8")
+      fs.readFileSync(path.join(__dirname, "..", "collections.json"), "utf-8")
     ) as CollectionMeta[];
   }
   return _manifest;
@@ -86,7 +86,7 @@ export function getCollection(id: string): CollectionMeta {
 }
 
 function resolveDataFile(id: string): string {
-  return path.join(__dirname, getCollection(id).dataFile);
+  return path.join(__dirname, "..", getCollection(id).dataFile);
 }
 
 // --- Collection-aware API ---

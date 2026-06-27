@@ -14,13 +14,13 @@
   },
   "type": "module",
   "scripts": {
-    "add": "tsx add.ts",
-    "dev": "node --env-file-if-exists=.env --import tsx server.ts",
-    "start": "node --env-file-if-exists=.env --import tsx server.ts",
-    "import:flat": "tsx db/import-cli.ts",
-    "archive:backfill": "tsx db/archive-backfill-cli.ts",
+    "add": "tsx src/add.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
+    "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
+    "import:flat": "tsx src/db/import-cli.ts",
+    "archive:backfill": "tsx src/db/archive-backfill-cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test --test-concurrency=1 add.test.ts storage.test.ts processors.test.ts processor-library.test.ts library-e2e.test.ts server.test.ts collections-ui.test.ts db/schema.test.ts descriptor/descriptor.test.ts descriptor/render-map.test.ts descriptor/guardrails.test.ts descriptor/inbox-suggest.test.ts db/seed.test.ts db/inbox-seed.test.ts db/queue.test.ts db/worker.test.ts db/status.test.ts db/item-actions.test.ts db/board-actions.test.ts db/search.test.ts db/view.test.ts db/materialize.test.ts db/fts.test.ts db/importer.test.ts db/suggestion-override.test.ts db/export.test.ts db/archive-footprint.test.ts db/archive-backfill.test.ts capture/adapter.test.ts capture/net-guard.test.ts capture/url-screenshot.test.ts capture/url-readable.test.ts capture/manual-upload.test.ts capture/concurrency.test.ts capture/url-snapshot.test.ts enrichment/worker.test.ts enrichment/refetch.test.ts enrichment/pipeline.test.ts enrichment/tier.test.ts enrichment/assign.test.ts enrichment/suggest.test.ts config.test.ts paths.test.ts browser.test.ts server-lock.test.ts api/v1.test.ts capture-clients/bookmarklet.test.ts extension/api-client.test.ts skills/registry.test.ts skills-route.test.ts skills/import-bookmarks.test.ts skills/core-skills.test.ts skills/compose-board.test.ts skills/compose-collection.test.ts skills/generate-fields.test.ts skills/export.test.ts llm/provider.test.ts llm/http-provider.test.ts llm/cli-provider.characterization.test.ts llm/cli-provider.test.ts llm/select-provider.test.ts sse.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\" \"extension/**/*.test.ts\""
   },
   "dependencies": {
     "@fastify/cors": "11.2.0",

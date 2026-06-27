@@ -8,7 +8,7 @@ import { runAdd } from "./add.js";
 import { BOOKMARKS_FILE, getCollection } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LIBRARY_FILE = path.join(__dirname, getCollection("library").dataFile);
+const LIBRARY_FILE = path.join(__dirname, "..", getCollection("library").dataFile);
 
 // library.json / bookmarks.json are gitignored personal-capture files (absent in
 // CI). Snapshot tolerates a missing file (returns null); restore puts the original

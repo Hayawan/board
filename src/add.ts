@@ -12,7 +12,7 @@ import { launchBrowser } from "./browser.js";
 import { config } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TAXONOMY_FILE = path.join(__dirname, "taxonomy.json");
+const TAXONOMY_FILE = path.join(__dirname, "..", "taxonomy.json");
 // Story 2.2: screenshots live under DATA_DIR (config.screenshotsDir), not the app tree.
 const SCREENSHOTS_DIR = config.screenshotsDir;
 
@@ -450,7 +450,7 @@ async function analyze(
     fs.writeFileSync(schemaFile, JSON.stringify(outputSchema));
     const { command, args } = buildAnalysisCommand(agent, prompt, processor.schema, processor.systemPrompt, { schemaFile, resultFile });
     const result = spawnSync(command, args, {
-      cwd: __dirname,
+      cwd: path.join(__dirname, ".."),
       encoding: "utf-8",
       maxBuffer: 10 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],

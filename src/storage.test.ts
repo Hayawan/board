@@ -14,7 +14,7 @@ import {
 } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LIBRARY_FILE = path.join(__dirname, "library.json");
+const LIBRARY_FILE = path.join(__dirname, "..", "library.json");
 
 // library.json is a gitignored personal-capture file (absent in CI). Snapshot
 // tolerates a missing file (returns null); restore puts the original back, or
@@ -94,6 +94,6 @@ test("BOOKMARKS_FILE is the absolute path to bookmarks.json", () => {
 });
 
 test("BOOKMARKS_FILE matches inspiration collection dataFile path", () => {
-  const expected = path.join(__dirname, getCollection("inspiration").dataFile);
+  const expected = path.join(__dirname, "..", getCollection("inspiration").dataFile);
   assert.equal(BOOKMARKS_FILE, expected);
 });

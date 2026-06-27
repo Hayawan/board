@@ -11,7 +11,7 @@ WorkingDirectory=/opt/board-oss
 
 # Story 11.1: production run mode = tsx at runtime (no build step). tsx + typescript
 # are runtime dependencies, so `npm ci --omit=dev` keeps them.
-ExecStart=/usr/bin/env node --import tsx server.ts
+ExecStart=/usr/bin/env node --import tsx src/server.ts
 
 # Epic 2 config seam. localhost-only bind (Story 2.4) — auth/TLS is the reverse proxy's
 # job. DATA_DIR (Story 2.2) is persistent + separate from the code dir, so upgrades /

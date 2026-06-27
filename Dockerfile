@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 build-e
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 # Runtime deps only (tsx + typescript are runtime deps — Story 11.1 — so the app runs
-# via `node --import tsx server.ts` with no build step).
+# via `node --import tsx src/server.ts` with no build step).
 RUN npm ci --omit=dev
 
 # ---- runtime ----------------------------------------------------------------
@@ -60,4 +60,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 # Chromium-in-container uses the no-sandbox launch args already set in Story 6.2
 # (--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage) — no --privileged
 # / SYS_ADMIN needed.
-CMD ["node", "--import", "tsx", "server.ts"]
+CMD ["node", "--import", "tsx", "src/server.ts"]
