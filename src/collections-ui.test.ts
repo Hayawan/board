@@ -387,12 +387,15 @@ test("renderEmptyState: composed board leads with its descriptor purpose", () =>
 });
 
 test("renderEmptyState: composed board prefers descriptor.empty_state copy (Story C delight)", () => {
+  // type:"inspiration" is the regression: a composed grid board inherits that type for
+  // card chrome, and it MUST NOT shadow the board's bespoke empty_state copy.
   const html = renderEmptyState({
-    id: "moodboard", name: "Mood", view: "grid",
-    descriptor: { empty_state: { head: "Nothing in the mood yet.", body: "Drop a reference and it joins the wall." } },
+    id: "wish-list-sblv", name: "Wish List", type: "inspiration", view: "grid",
+    descriptor: { empty_state: { head: "Nothing wanted yet.", body: "Drop the first product you have your eye on." } },
   });
-  assert.ok(html.includes("Nothing in the mood yet."), "uses the composed head, not the generic 'This board is ready.'");
-  assert.ok(html.includes("Drop a reference and it joins the wall."), "uses the composed body");
+  assert.ok(html.includes("Nothing wanted yet."), "uses the composed head, not the inherited Inspiration copy");
+  assert.ok(html.includes("Drop the first product you have your eye on."), "uses the composed body");
+  assert.ok(!html.includes("Nothing pinned yet."), "the type=inspiration seeded copy must not leak through");
   assert.ok(!html.includes("This board is ready."), "generic fallback suppressed when empty_state present");
 });
 
