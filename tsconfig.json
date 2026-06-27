@@ -5,6 +5,22 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    // The browser-served helpers (collections-ui.js, descriptor/*.js, extension/
+    // api-client.js) have no build step, so they ship as plain .js. allowJs lets tsc
+    // INFER their types for the .ts tests that import them; checkJs:false means their
+    // own internals aren't linted (they target the browser, not node). The exclude list
+    // below drops the .js that use non-DOM globals (service worker `self`/`caches`,
+    // extension `chrome`, node scripts) — those are run, not type-checked.
+    "allowJs": true,
+    "checkJs": false
+  },
+  "exclude": [
+    "node_modules",
+    "scripts",
+    "get_advice.cjs",
+    "sw.js",
+    "extension/popup.js",
+    "extension/options.js"
+  ]
 }

@@ -22,7 +22,9 @@ function recordingFetch(response: unknown = {}, status = 200) {
       json: async () => response,
     };
   };
-  return { fetchFn, calls };
+  // The client only needs a fetch-shaped callable; cast the minimal stand-in to the
+  // global fetch type at the injection seam (the test asserts behavior, not types).
+  return { fetchFn: fetchFn as unknown as typeof fetch, calls };
 }
 
 // AC 1/5 — save() POSTs the current tab to the authed /api/v1/items with NO board.
@@ -101,17 +103,17 @@ test("13.4 (contract): save→Inbox and assign→move work against a real buildS
     const res = await app.inject({ method: opts.method ?? "GET", url, headers: opts.headers, payload: opts.body });
     return { ok: res.statusCode < 400, status: res.statusCode, json: async () => JSON.parse(res.body) };
   };
-  const client = createBoardClient({ baseUrl: "", token: "test-token", fetch: fetchAdapter });
+  const client = createBoardClient({ baseUrl: "", token: "test-token", fetch: fetchAdapter as unknown as typeof fetch });
   try {
     // save() → an Inbox item exists (AC1, → Inbox via the live omitted-board default).
     const saved = await client.save({ url: "https://ext.example/a", title: "A" });
     assert.ok(saved.id, "save returned a created item id");
-    assert.equal(handle.db.select().from(items).where(eq(items.id, saved.id)).get().boardId, "inbox");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, saved.id)).get()!.boardId, "inbox");
 
     // assign() → board_id actually moved to the target (AC2, the one assign verb).
     const result = await client.assign(saved.id, "library");
     assert.deepEqual(result.assigned, [saved.id], "the live assign endpoint accepted the batch body and moved the item");
-    assert.equal(handle.db.select().from(items).where(eq(items.id, saved.id)).get().boardId, "library");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, saved.id)).get()!.boardId, "library");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

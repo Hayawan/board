@@ -250,7 +250,7 @@ describe('assignItems archival trigger (Story 16.2)', () => {
       assert.equal(snaps.length, 1, 'exactly one snapshot enqueued for the promoted item');
       assert.deepEqual(snaps[0], { itemId: 'arch1', url: 'https://archive.me/x' });
       // the enrichment-WRITTEN takeaway coexists with the snapshot trigger (not clobbered)
-      const row = handle.db.select().from(items).where(eq(items.id, 'arch1')).get();
+      const row = handle.db.select().from(items).where(eq(items.id, 'arch1')).get()!;
       assert.equal((row.fields as any).summary, 'earned takeaway', 'the earned takeaway the enricher wrote is intact');
       assert.equal(row.boardId, LIBRARY_BOARD_ID);
     } finally {

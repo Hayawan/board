@@ -340,7 +340,7 @@ test("13.1: POST /api/v1/items with no boardId lands on the Inbox", async () => 
     });
     assert.equal(res.statusCode, 201);
     const id = JSON.parse(res.body).id;
-    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get().boardId, "inbox");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get()!.boardId, "inbox");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -364,7 +364,7 @@ test("13.2: POST /api/v1/items {url, title} with no board lands a pending item i
     assert.equal(res.statusCode, 201);
     const body = JSON.parse(res.body);
     assert.equal(body.status, "pending");
-    assert.equal(handle.db.select().from(items).where(eq(items.id, body.id)).get().boardId, "inbox");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, body.id)).get()!.boardId, "inbox");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -521,7 +521,7 @@ test("12.2: PATCH /api/v1/items/:id applies the user-field allowlist", async () 
       body: JSON.stringify({ notes: "hello", favorite: true, status: "done" }),
     });
     assert.equal(res.statusCode, 200);
-    const row = handle.db.select().from(items).where(eq(items.id, "p1")).get();
+    const row = handle.db.select().from(items).where(eq(items.id, "p1")).get()!;
     assert.equal(row.notes, "hello");
     assert.equal(row.favorite, 1);
     assert.equal(row.status, "ready", "disallowed `status` must be unchanged");
@@ -613,7 +613,7 @@ test("14.2: POST /api/v1/items/assign moves items to the target board (single-FK
     });
     assert.equal(res.statusCode, 200);
     assert.deepEqual(JSON.parse(res.body).assigned, ["a1"]);
-    assert.equal(handle.db.select().from(items).where(eq(items.id, "a1")).get().boardId, "library");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "a1")).get()!.boardId, "library");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -647,7 +647,7 @@ test("14.2: POST /api/v1/items/assign to an unknown board → 400", async () => 
       body: JSON.stringify({ itemIds: ["a2"], boardId: "no-such-board" }),
     });
     assert.equal(res.statusCode, 400);
-    assert.equal(handle.db.select().from(items).where(eq(items.id, "a2")).get().boardId, "inbox");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "a2")).get()!.boardId, "inbox");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -679,7 +679,7 @@ test("14.3: GET /api/v1/items/:id/suggestion returns null when no provider is co
     assert.equal(res.statusCode, 200);
     assert.equal(JSON.parse(res.body).suggestedBoardId, null);
     // read-only: the item is untouched
-    assert.equal(handle.db.select().from(items).where(eq(items.id, "s1")).get().boardId, "inbox");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, "s1")).get()!.boardId, "inbox");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -770,7 +770,7 @@ test("12.2 (NFR-BC): an item from the collections path is visible + mutable via 
       body: JSON.stringify({ notes: "via v1" }),
     });
     assert.equal(patched.statusCode, 200);
-    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get().notes, "via v1");
+    assert.equal(handle.db.select().from(items).where(eq(items.id, id)).get()!.notes, "via v1");
   } finally {
     handle.sqlite.close();
     fs.rmSync(dir, { recursive: true, force: true });

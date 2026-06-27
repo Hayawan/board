@@ -241,8 +241,8 @@ const FILTER_DESCRIPTOR = { view: "list", fields: [
 test("buildFilters derives filters from enum/tags fields only (synthetic descriptor)", () => {
   const filters = buildFilters(FILTER_DESCRIPTOR);
   assert.deepEqual(filters.map((f) => f.key), ["type", "topics"]); // text/number excluded
-  assert.equal(filters.find((f) => f.key === "type").type, "enum");
-  assert.deepEqual(filters.find((f) => f.key === "type").values, ["article", "video"]);
+  assert.equal(filters.find((f) => f.key === "type")!.type, "enum");
+  assert.deepEqual(filters.find((f) => f.key === "type")!.values, ["article", "video"]);
   assert.equal(buildFilters(undefined).length, 0);
 });
 

@@ -69,6 +69,7 @@ export function itemFieldEntries(item, descriptor) {
 // `[{ key, label, type }]` for each filterable field. NOTE: free-text `q` is NOT a
 // filter here — full-text search is Story 9.1 (server FTS5); don't reintroduce a
 // second client text search.
+/** @returns {Array<{ key: string, label: string, type: string, values: string[] | null }>} */
 export function buildFilters(descriptor) {
   if (!descriptor || !Array.isArray(descriptor.fields)) return [];
   return descriptor.fields
@@ -295,6 +296,7 @@ export function matchesLibraryFilters(item, { q = "", topic = "", type = "" } = 
   return true;
 }
 
+/** @returns {Record<string, number>} topic → occurrence count across all items */
 export function topicCounts(items) {
   const counts = {};
   for (const item of items) {

@@ -16,6 +16,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
 
   # Story 11.2: the container image's "test" is build + boot + /healthz + a smoke

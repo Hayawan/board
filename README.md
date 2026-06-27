@@ -143,3 +143,7 @@ asserting `/healthz` and a real in-container screenshot capture.
 Your data is a plain SQLite file plus a `screenshots/` directory under `DATA_DIR` —
 copy the directory and walk away. Upgrading the code (a `git pull` / container
 rebuild) never touches `DATA_DIR`.
+
+## License
+
+[MIT](./LICENSE) © Seanathon
