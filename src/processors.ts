@@ -1,4 +1,6 @@
-export type Captured = { text: string; screenshotPath?: string | null };
+// `imageUrl` — the page's social/hero image (og:image etc.), when found. Readable
+// captures have no screenshot, so this is how a Library/wish-list card gets a picture.
+export type Captured = { text: string; screenshotPath?: string | null; imageUrl?: string };
 
 export interface Processor {
   type: string;

@@ -2287,7 +2287,7 @@ LLM_API_KEY=sk-…</pre>
       <div class="grid-card" data-id="${b.id}" style="position:relative">
         ${b.screenshot
           ? `<img class="card-screenshot" src="${shotSrc(b)}" alt="${esc(b.title)}" loading="lazy" />`
-          : `<div class="card-no-screenshot">No screenshot</div>`}
+          : `<div class="card-no-screenshot">No image</div>`}
         <button class="fav-btn${b.favorite ? ' active' : ''}" data-id="${b.id}" title="${b.favorite ? 'Unfavorite' : 'Favorite'}">${HEART_SVG}</button>
         <button class="more-btn" data-id="${b.id}" title="More">···</button>
         <div class="card-body">
@@ -2788,7 +2788,7 @@ LLM_API_KEY=sk-…</pre>
     content.innerHTML = `
       ${b.screenshot
         ? `<img class="modal-screenshot" src="${shotSrc(b)}" alt="${esc(b.title)}" />`
-        : `<div class="modal-screenshot-empty">No screenshot captured</div>`}
+        : `<div class="modal-screenshot-empty">No image</div>`}
       <div class="modal-body">
         <div class="modal-title-row">
           <div class="modal-title">${esc(b.title)}</div>

@@ -129,6 +129,74 @@ export function extractReadableMarkdown(html: string, url: string): string {
   return (dom.window.document.body?.textContent ?? "").slice(0, 10000);
 }
 
+/** Find an image URL inside a JSON-LD node (string | {url} | array of either). */
+function jsonLdImage(data: unknown): string | undefined {
+  const nodes = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as Record<string, unknown>)["@graph"])
+      ? ((data as Record<string, unknown>)["@graph"] as unknown[])
+      : [data];
+  for (const n of nodes) {
+    if (!n || typeof n !== "object") continue;
+    const img = (n as Record<string, unknown>).image;
+    if (typeof img === "string") return img;
+    if (Array.isArray(img) && img.length) {
+      const first = img[0];
+      if (typeof first === "string") return first;
+      if (first && typeof first === "object" && typeof (first as Record<string, unknown>).url === "string")
+        return (first as Record<string, string>).url;
+    }
+    if (img && typeof img === "object" && typeof (img as Record<string, unknown>).url === "string")
+      return (img as Record<string, string>).url;
+  }
+  return undefined;
+}
+
+/**
+ * Extract the page's social/hero image — the picture a readable (screenshot-less)
+ * capture can still show. Order: og:image (secure first), twitter:image, JSON-LD
+ * product image, link[rel=image_src]. Relative URLs resolve against the page URL.
+ * Pure + network-free (parses the already-fetched HTML); returns undefined if none.
+ */
+export function extractOgImage(html: string, url: string): string | undefined {
+  let doc: Document;
+  try {
+    doc = new JSDOM(html, { url }).window.document;
+  } catch {
+    return undefined;
+  }
+  const attr = (sel: string, name: string): string | undefined => {
+    const v = doc.querySelector(sel)?.getAttribute(name);
+    return v && v.trim() ? v.trim() : undefined;
+  };
+  let raw =
+    attr('meta[property="og:image:secure_url"]', "content") ??
+    attr('meta[property="og:image"]', "content") ??
+    attr('meta[name="og:image"]', "content") ??
+    attr('meta[name="twitter:image"]', "content") ??
+    attr('meta[property="twitter:image"]', "content") ??
+    attr('link[rel="image_src"]', "href");
+  if (!raw) {
+    for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const found = jsonLdImage(JSON.parse(s.textContent ?? ""));
+        if (found) {
+          raw = found;
+          break;
+        }
+      } catch {
+        /* malformed JSON-LD — skip */
+      }
+    }
+  }
+  if (!raw) return undefined;
+  try {
+    return new URL(raw, url).href; // resolve relative ("/img/x.jpg") against the page
+  } catch {
+    return undefined;
+  }
+}
+
 export async function captureLibrary(
   url: string,
   opts?: { fetchImpl?: typeof fetch; renderImpl?: (url: string) => Promise<string> }
@@ -138,6 +206,7 @@ export async function captureLibrary(
 
   const response = await fetchFn(url);
   const html = await response.text();
+  const imageUrl = extractOgImage(html, url); // hero image from the static HTML (head meta)
   let text = extractReadableMarkdown(html, url);
 
   // JS-rendered pages (SPAs) return a near-empty server shell, so fetch+readability
@@ -163,7 +232,7 @@ export async function captureLibrary(
     );
   }
 
-  return { text, screenshotPath: null };
+  return { text, screenshotPath: null, imageUrl };
 }
 
 const libraryProcessor: Processor = {
