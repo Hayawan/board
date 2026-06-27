@@ -184,6 +184,13 @@ export function boardPurpose(collection) {
 function emptyVoice(collection, aiOn) {
   const id = collection && collection.id;
   const type = collection && collection.type;
+  // Composer-written copy wins for ANY board that carries it. This MUST come before the
+  // type-based branches below: a composed grid board inherits type "inspiration" (for
+  // card chrome), which would otherwise shadow its bespoke empty_state with the seeded
+  // Inspiration copy. The seeded boards have no empty_state, so they skip this and keep
+  // their hardcoded, AI-aware voice.
+  const es = collection && collection.descriptor && collection.descriptor.empty_state;
+  if (es && es.head && es.body) return { head: es.head, body: es.body };
   if (id === "inbox") {
     return {
       head: "Inbox zero.",
@@ -206,11 +213,8 @@ function emptyVoice(collection, aiOn) {
         : "Library is for things worth reading twice. Save a link and it is kept as a clean, readable bookmark.",
     };
   }
-  // Composed / custom board: lead with the bespoke empty-state copy the composer wrote
-  // for it (a moment of delight in the board's own voice, Story C). Guardrails guarantee
-  // both halves are non-empty when present; otherwise fall back to the generic stance.
-  const es = collection && collection.descriptor && collection.descriptor.empty_state;
-  if (es && es.head && es.body) return { head: es.head, body: es.body };
+  // Composed / custom board with no bespoke copy (e.g. created with AI off): fall back
+  // to the generic stance + purpose line.
   return { head: "This board is ready.", body: boardPurpose(collection) };
 }
 
