@@ -4,6 +4,11 @@ A lightweight, self-hostable, agent-native curation tool. Evolution of the `boar
 prototype: Node/TypeScript + Fastify + SQLite, designed to run on a small Proxmox
 LXC (~512MB–1GB RAM).
 
+|  |  |  |
+|:--:|:--:|:--:|
+| ![Inspiration board: a visual grid of captured sites](docs/media/inspiration-grid.png) | ![Library board: a readable list of saved articles](docs/media/library-list.png) | ![Item detail with the AI design analysis](docs/media/item-design-read.png) |
+| *Inspiration: a visual grid with an AI design read per card* | *Library: a readable list with AI summaries* | *Detail: the full per-item design analysis* |
+
 ## Quick start
 
 ```bash
