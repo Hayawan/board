@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import "./processor-library.js"; // registers the library processor as a module side-effect
-import { captureLibrary, extractReadableMarkdown, validateLibraryAnalysis } from "./processor-library.js";
+import { captureLibrary, extractOgImage, extractReadableMarkdown, validateLibraryAnalysis } from "./processor-library.js";
 import { getProcessor } from "./processors.js";
 
 // HTML fixture: clear article plus nav/footer noise
@@ -270,4 +270,34 @@ test("libraryProcessor.summarize returns type, topics, and summary lines", () =>
   assert.ok(lines.some((l) => l.includes("ai")), "should include topics");
   assert.ok(!lines.some((l) => l.includes("steal_this")), "should not reference inspiration design fields");
   assert.ok(!lines.some((l) => l.includes("audience")), "should not reference inspiration meta fields");
+});
+
+// --- extractOgImage (hero image for screenshot-less captures) ---
+
+test("extractOgImage prefers og:image and returns an absolute URL", () => {
+  const html = `<html><head><meta property="og:image" content="https://cdn.example/p/r1280t.jpg"></head><body>x</body></html>`;
+  assert.equal(extractOgImage(html, "https://shop.example/r1280t"), "https://cdn.example/p/r1280t.jpg");
+});
+
+test("extractOgImage resolves a relative og:image against the page URL", () => {
+  const html = `<html><head><meta property="og:image" content="/img/hero.png"></head></html>`;
+  assert.equal(extractOgImage(html, "https://shop.example/products/r1280t"), "https://shop.example/img/hero.png");
+});
+
+test("extractOgImage falls back to twitter:image when og:image is absent", () => {
+  const html = `<html><head><meta name="twitter:image" content="https://cdn.example/t.webp"></head></html>`;
+  assert.equal(extractOgImage(html, "https://shop.example/x"), "https://cdn.example/t.webp");
+});
+
+test("extractOgImage reads a JSON-LD product image (string, array, or {url})", () => {
+  const ld = (img: string) => `<html><head><script type="application/ld+json">${img}</script></head></html>`;
+  const base = "https://shop.example/x";
+  assert.equal(extractOgImage(ld(JSON.stringify({ "@type": "Product", image: "https://cdn.example/a.jpg" })), base), "https://cdn.example/a.jpg");
+  assert.equal(extractOgImage(ld(JSON.stringify({ "@type": "Product", image: ["https://cdn.example/b.jpg"] })), base), "https://cdn.example/b.jpg");
+  assert.equal(extractOgImage(ld(JSON.stringify({ "@type": "Product", image: { url: "https://cdn.example/c.jpg" } })), base), "https://cdn.example/c.jpg");
+});
+
+test("extractOgImage returns undefined when the page has no image and ignores malformed JSON-LD", () => {
+  assert.equal(extractOgImage(`<html><head><title>No image here</title></head></html>`, "https://x.example"), undefined);
+  assert.equal(extractOgImage(`<html><head><script type="application/ld+json">{ not json </script></head></html>`, "https://x.example"), undefined);
 });

@@ -20,7 +20,10 @@ export function hydrateItemForUi(item: Item, itemAssets: Asset[] = []): Record<s
   };
   if (item.errorReason) out.error_reason = item.errorReason;
 
-  const shot = itemAssets.find((a) => a.kind === 'screenshot');
+  // The card/modal image: a real screenshot (url-screenshot boards) or, failing that,
+  // the page's hero image (og:image, captured for readable boards). Either one fills the
+  // single `screenshot` field the renderers read.
+  const shot = itemAssets.find((a) => a.kind === 'screenshot') ?? itemAssets.find((a) => a.kind === 'image');
   if (shot?.path) out.screenshot = shot.path;
 
   const fields = (item.fields as Record<string, unknown>) ?? {};

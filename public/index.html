@@ -1265,6 +1265,11 @@
       gap: 12px;
       margin-bottom: 4px;
     }
+    /* No screenshot → the title row sits at the very top, so reserve space on the right
+       for the absolute close button (top:14 right:14, 30px) the favorite star would
+       otherwise collide with. With a screenshot, the close button floats over the image
+       and the row clears it naturally. */
+    .modal-title-row.no-shot { padding-right: 36px; }
 
     .modal-title { font-size: 20px; font-weight: 700; }
 
@@ -2287,7 +2292,7 @@ LLM_API_KEY=sk-…</pre>
       <div class="grid-card" data-id="${b.id}" style="position:relative">
         ${b.screenshot
           ? `<img class="card-screenshot" src="${shotSrc(b)}" alt="${esc(b.title)}" loading="lazy" />`
-          : `<div class="card-no-screenshot">No screenshot</div>`}
+          : `<div class="card-no-screenshot">No image</div>`}
         <button class="fav-btn${b.favorite ? ' active' : ''}" data-id="${b.id}" title="${b.favorite ? 'Unfavorite' : 'Favorite'}">${HEART_SVG}</button>
         <button class="more-btn" data-id="${b.id}" title="More">···</button>
         <div class="card-body">
@@ -2521,7 +2526,7 @@ LLM_API_KEY=sk-…</pre>
     content.innerHTML = `
       ${item.screenshot ? `<img class="modal-screenshot" src="${shotSrc(item)}" alt="${esc(item.title || '')}">` : ''}
       <div class="modal-body">
-        <div class="modal-title-row" style="display:flex;align-items:center;gap:10px">
+        <div class="modal-title-row${item.screenshot ? '' : ' no-shot'}" style="display:flex;align-items:center;gap:10px">
           <div class="modal-title" style="flex:1">${esc(item.title || item.url || '')}</div>
           ${tierBadge}${favStar}
         </div>
@@ -2788,7 +2793,7 @@ LLM_API_KEY=sk-…</pre>
     content.innerHTML = `
       ${b.screenshot
         ? `<img class="modal-screenshot" src="${shotSrc(b)}" alt="${esc(b.title)}" />`
-        : `<div class="modal-screenshot-empty">No screenshot captured</div>`}
+        : `<div class="modal-screenshot-empty">No image</div>`}
       <div class="modal-body">
         <div class="modal-title-row">
           <div class="modal-title">${esc(b.title)}</div>
